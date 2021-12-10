@@ -177,6 +177,10 @@ pub mod hash;
 #[cfg(feature = "alloc")]
 pub mod padding;
 
+/// Supported padding schemes.
+#[cfg(feature = "alloc")]
+pub mod bigint;
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod encoding;

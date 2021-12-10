@@ -16,6 +16,7 @@ use crate::errors::{Error, Result};
 use crate::padding::PaddingScheme;
 use crate::raw::{DecryptionPrimitive, EncryptionPrimitive};
 use crate::{oaep, pkcs1v15, pss};
+use crate::bigint::BigUInteger;
 
 lazy_static! {
     static ref MIN_PUB_EXPONENT: BigUint = BigUint::from_u64(2).unwrap();
