@@ -19,8 +19,8 @@ use crate::{oaep, pkcs1v15, pss};
 use crate::bigint::BigUInteger;
 
 lazy_static! {
-    static ref MIN_PUB_EXPONENT: BigUint = BigUint::from_u64(2).unwrap();
-    static ref MAX_PUB_EXPONENT: BigUint = BigUint::from_u64(1 << (31 - 1)).unwrap();
+    static ref MIN_PUB_EXPONENT: BigUInteger = BigUInteger::from_u64(2).unwrap();
+    static ref MAX_PUB_EXPONENT: BigUInteger  = BigUInteger::from_u64(1 << (31 - 1)).unwrap();
 }
 
 pub trait PublicKeyParts {
