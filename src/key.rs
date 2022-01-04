@@ -1,30 +1,19 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
-use num_bigint::traits::ModInverse;
-use num_bigint::Sign::Plus;
-use num_bigint::{BigInt, BigUint};
-use num_traits::{One, ToPrimitive};
-use rand::{rngs::StdRng, Rng};
+
+use num_bigint::BigUint;
+use num_traits::One;
+use rand::Rng;
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::algorithms::{generate_multi_prime_key, generate_multi_prime_key_with_exp};
+use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
-
-use crate::padding::PaddingScheme;
-use crate::raw::{DecryptionPrimitive, EncryptionPrimitive};
-use crate::{oaep, pkcs1v15, pss};
-
-static MIN_PUB_EXPONENT: u64 = 2;
-static MAX_PUB_EXPONENT: u64 = 1 << (31 - 1);
 
 pub trait PublicKeyParts {
     /// Returns the modulus of the key.
     fn n(&self) -> &BigUint;
-
-    /// Returns the public exponent of the key.
-    fn e(&self) -> &BigUint;
 
     /// Returns the modulus size in bytes. Raw signatures and ciphertexts for
     /// or by this public key will have the same size.
@@ -33,7 +22,9 @@ pub trait PublicKeyParts {
     }
 }
 
-pub trait PrivateKey: DecryptionPrimitive + PublicKeyParts {}
+pub trait PrivateKey: PublicKeyParts {
+    fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>>;
+}
 
 /// Represents the public part of an RSA key.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -44,7 +35,6 @@ pub trait PrivateKey: DecryptionPrimitive + PublicKeyParts {}
 )]
 pub struct RsaPublicKey {
     n: BigUint,
-    e: BigUint,
 }
 
 /// Represents a whole RSA key, public and private parts.
@@ -57,21 +47,14 @@ pub struct RsaPublicKey {
 pub struct RsaPrivateKey {
     /// Public components of the private key.
     pubkey_components: RsaPublicKey,
-    /// Private exponent
-    pub(crate) d: BigUint,
     /// Prime factors of N, contains >= 2 elements.
     pub(crate) primes: Vec<BigUint>,
-    /// precomputed values to speed up private operations
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub(crate) precomputed: Option<PrecomputedValues>,
 }
 
 impl PartialEq for RsaPrivateKey {
     #[inline]
     fn eq(&self, other: &RsaPrivateKey) -> bool {
-        self.pubkey_components == other.pubkey_components
-            && self.d == other.d
-            && self.primes == other.primes
+        self.pubkey_components == other.pubkey_components && self.primes == other.primes
     }
 }
 
@@ -79,14 +62,10 @@ impl Eq for RsaPrivateKey {}
 
 impl Zeroize for RsaPrivateKey {
     fn zeroize(&mut self) {
-        self.d.zeroize();
         for prime in self.primes.iter_mut() {
             prime.zeroize();
         }
         self.primes.clear();
-        if self.precomputed.is_some() {
-            self.precomputed.take().unwrap().zeroize();
-        }
     }
 }
 
@@ -103,51 +82,6 @@ impl Deref for RsaPrivateKey {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct PrecomputedValues {
-    /// D mod (P-1)
-    pub(crate) dp: BigUint,
-    /// D mod (Q-1)
-    pub(crate) dq: BigUint,
-    /// Q^-1 mod P
-    pub(crate) qinv: BigInt,
-
-    /// CRTValues is used for the 3rd and subsequent primes. Due to a
-    /// historical accident, the CRT for the first two primes is handled
-    /// differently in PKCS#1 and interoperability is sufficiently
-    /// important that we mirror this.
-    pub(crate) crt_values: Vec<CRTValue>,
-}
-
-impl Zeroize for PrecomputedValues {
-    fn zeroize(&mut self) {
-        self.dp.zeroize();
-        self.dq.zeroize();
-        self.qinv.zeroize();
-        for val in self.crt_values.iter_mut() {
-            val.zeroize();
-        }
-        self.crt_values.clear();
-    }
-}
-
-impl Drop for PrecomputedValues {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-/// Contains the precomputed Chinese remainder theorem values.
-#[derive(Debug, Clone, Zeroize)]
-pub(crate) struct CRTValue {
-    /// D mod (prime - 1)
-    pub(crate) exp: BigInt,
-    /// R·Coeff ≡ 1 mod Prime.
-    pub(crate) coeff: BigInt,
-    /// product of primes prior to this (inc p and q)
-    pub(crate) r: BigInt,
-}
-
 impl From<RsaPrivateKey> for RsaPublicKey {
     fn from(private_key: RsaPrivateKey) -> Self {
         (&private_key).into()
@@ -157,63 +91,36 @@ impl From<RsaPrivateKey> for RsaPublicKey {
 impl From<&RsaPrivateKey> for RsaPublicKey {
     fn from(private_key: &RsaPrivateKey) -> Self {
         let n = private_key.n.clone();
-        let e = private_key.e.clone();
 
-        RsaPublicKey { n, e }
+        RsaPublicKey { n }
     }
 }
 
 /// Generic trait for operations on a public key.
-pub trait PublicKey: EncryptionPrimitive + PublicKeyParts {
-    /// Encrypt the given message.
-    fn encrypt<R: Rng>(&self, rng: &mut R, padding: PaddingScheme, msg: &[u8]) -> Result<Vec<u8>>;
-
+pub trait PublicKey: PublicKeyParts {
     /// Verify a signed message.
     /// `hashed`must be the result of hashing the input using the hashing function
     /// passed in through `hash`.
     /// If the message is valid `Ok(())` is returned, otherwiese an `Err` indicating failure.
-    fn verify(&self, padding: PaddingScheme, hashed: &[u8], sig: &[u8]) -> Result<()>;
+    fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()>;
 }
 
 impl PublicKeyParts for RsaPublicKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
-
-    fn e(&self) -> &BigUint {
-        &self.e
-    }
 }
 
 impl PublicKey for RsaPublicKey {
-    fn encrypt<R: Rng>(&self, rng: &mut R, padding: PaddingScheme, msg: &[u8]) -> Result<Vec<u8>> {
-        match padding {
-            PaddingScheme::PKCS1v15Encrypt => pkcs1v15::encrypt(rng, self, msg),
-            PaddingScheme::OAEP {
-                mut digest,
-                mut mgf_digest,
-                label,
-            } => oaep::encrypt(rng, self, msg, &mut *digest, &mut *mgf_digest, label),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
-    }
-
-    fn verify(&self, padding: PaddingScheme, hashed: &[u8], sig: &[u8]) -> Result<()> {
-        match padding {
-            PaddingScheme::PKCS1v15Sign { ref hash } => {
-                pkcs1v15::verify(self, hash.as_ref(), hashed, sig)
-            }
-            PaddingScheme::PSS { mut digest, .. } => pss::verify(self, hashed, sig, &mut *digest),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
+    fn verify(&self, _hashed: &[u8], _sig: &[u8]) -> Result<()> {
+        todo!()
     }
 }
 
 impl RsaPublicKey {
     /// Create a new key from its components.
-    pub fn new(n: BigUint, e: BigUint) -> Result<Self> {
-        let k = RsaPublicKey { n, e };
-        check_public(&k)?;
+    pub fn new(n: BigUint) -> Result<Self> {
+        let k = RsaPublicKey { n };
 
         Ok(k)
     }
@@ -224,20 +131,11 @@ impl<'a> PublicKeyParts for &'a RsaPublicKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
-
-    /// Returns the public exponent of the key.
-    fn e(&self) -> &BigUint {
-        &self.e
-    }
 }
 
 impl<'a> PublicKey for &'a RsaPublicKey {
-    fn encrypt<R: Rng>(&self, rng: &mut R, padding: PaddingScheme, msg: &[u8]) -> Result<Vec<u8>> {
-        (*self).encrypt(rng, padding, msg)
-    }
-
-    fn verify(&self, padding: PaddingScheme, hashed: &[u8], sig: &[u8]) -> Result<()> {
-        (*self).verify(padding, hashed, sig)
+    fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()> {
+        (*self).verify(hashed, sig)
     }
 }
 
@@ -245,62 +143,38 @@ impl PublicKeyParts for RsaPrivateKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
-
-    fn e(&self) -> &BigUint {
-        &self.e
-    }
 }
 
-impl PrivateKey for RsaPrivateKey {}
+impl PrivateKey for RsaPrivateKey {
+    fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>> {
+        (*self).sign(digest_in)
+    }
+}
 
 impl<'a> PublicKeyParts for &'a RsaPrivateKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
-
-    fn e(&self) -> &BigUint {
-        &self.e
-    }
 }
 
-impl<'a> PrivateKey for &'a RsaPrivateKey {}
+impl<'a> PrivateKey for &'a RsaPrivateKey {
+    fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>> {
+        (*self).sign(digest_in)
+    }
+}
 
 impl RsaPrivateKey {
     /// Generate a new Rsa key pair of the given bit size using the passed in `rng`.
     pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<RsaPrivateKey> {
-        generate_multi_prime_key(rng, 2, bit_size)
-    }
-
-    /// Generate a new RSA key pair of the given bit size and the public exponent
-    /// using the passed in `rng`.
-    ///
-    /// Unless you have specific needs, you should use `RsaPrivateKey::new` instead.
-    pub fn new_with_exp<R: Rng>(
-        rng: &mut R,
-        bit_size: usize,
-        exp: &BigUint,
-    ) -> Result<RsaPrivateKey> {
-        generate_multi_prime_key_with_exp(rng, 2, bit_size, exp)
+        generate_multi_prime_key_with_exp(rng, bit_size)
     }
 
     /// Constructs an RSA key pair from the individual components.
-    pub fn from_components(
-        n: BigUint,
-        e: BigUint,
-        d: BigUint,
-        primes: Vec<BigUint>,
-    ) -> RsaPrivateKey {
-        let mut k = RsaPrivateKey {
-            pubkey_components: RsaPublicKey { n, e },
-            d,
+    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> RsaPrivateKey {
+        RsaPrivateKey {
+            pubkey_components: RsaPublicKey { n },
             primes,
-            precomputed: None,
-        };
-
-        // precompute when possible, ignore error otherwise.
-        let _ = k.precompute();
-
-        k
+        }
     }
 
     /// Get the public key from the private key, cloning `n` and `e`.
@@ -309,58 +183,7 @@ impl RsaPrivateKey {
     /// but it can occationally be useful to discard the private information entirely.
     pub fn to_public_key(&self) -> RsaPublicKey {
         // Safe to unwrap since n and e are already verified.
-        RsaPublicKey::new(self.n().clone(), self.e().clone()).unwrap()
-    }
-
-    /// Performs some calculations to speed up private key operations.
-    pub fn precompute(&mut self) -> Result<()> {
-        if self.precomputed.is_some() {
-            return Ok(());
-        }
-
-        let dp = &self.d % (&self.primes[0] - BigUint::one());
-        let dq = &self.d % (&self.primes[1] - BigUint::one());
-        let qinv = self.primes[1]
-            .clone()
-            .mod_inverse(&self.primes[0])
-            .ok_or(Error::InvalidPrime)?;
-
-        let mut r: BigUint = &self.primes[0] * &self.primes[1];
-        let crt_values: Vec<CRTValue> = {
-            let mut values = Vec::with_capacity(self.primes.len() - 2);
-            for prime in &self.primes[2..] {
-                let res = CRTValue {
-                    exp: BigInt::from_biguint(Plus, &self.d % (prime - BigUint::one())),
-                    r: BigInt::from_biguint(Plus, r.clone()),
-                    coeff: BigInt::from_biguint(
-                        Plus,
-                        r.clone()
-                            .mod_inverse(prime)
-                            .ok_or(Error::InvalidCoefficient)?
-                            .to_biguint()
-                            .unwrap(),
-                    ),
-                };
-                r *= prime;
-
-                values.push(res);
-            }
-            values
-        };
-
-        self.precomputed = Some(PrecomputedValues {
-            dp,
-            dq,
-            qinv,
-            crt_values,
-        });
-
-        Ok(())
-    }
-
-    /// Returns the private exponent of the key.
-    pub fn d(&self) -> &BigUint {
-        &self.d
+        RsaPublicKey::new(self.n().clone()).unwrap()
     }
 
     /// Returns the prime factors.
@@ -371,8 +194,6 @@ impl RsaPrivateKey {
     /// Performs basic sanity checks on the key.
     /// Returns `Ok(())` if everything is good, otherwise an approriate error.
     pub fn validate(&self) -> Result<()> {
-        check_public(self)?;
-
         // Check that Πprimes == n.
         let mut m = BigUint::one();
         for prime in &self.primes {
@@ -386,154 +207,21 @@ impl RsaPrivateKey {
             return Err(Error::InvalidModulus);
         }
 
-        // Check that de ≡ 1 mod p-1, for each prime.
-        // This implies that e is coprime to each p-1 as e has a multiplicative
-        // inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
-        // exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
-        // mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
-        let mut de = self.e.clone();
-        de *= self.d.clone();
-        for prime in &self.primes {
-            let congruence: BigUint = &de % (prime - BigUint::one());
-            if !congruence.is_one() {
-                return Err(Error::InvalidExponent);
-            }
-        }
-
         Ok(())
     }
 
-    /// Decrypt the given message.
-    pub fn decrypt(&self, padding: PaddingScheme, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        match padding {
-            // need to pass any Rng as the type arg, so the type checker is happy, it is not actually used for anything
-            PaddingScheme::PKCS1v15Encrypt => {
-                pkcs1v15::decrypt::<StdRng, _>(None, self, ciphertext)
-            }
-            PaddingScheme::OAEP {
-                mut digest,
-                mut mgf_digest,
-                label,
-            } => oaep::decrypt::<StdRng, _>(
-                None,
-                self,
-                ciphertext,
-                &mut *digest,
-                &mut *mgf_digest,
-                label,
-            ),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
+    pub fn sign(&self, _digest_in: &[u8]) -> Result<Vec<u8>> {
+        todo!()
     }
-
-    /// Decrypt the given message.
-    ///
-    /// Uses `rng` to blind the decryption process.
-    pub fn decrypt_blinded<R: Rng>(
-        &self,
-        rng: &mut R,
-        padding: PaddingScheme,
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>> {
-        match padding {
-            PaddingScheme::PKCS1v15Encrypt => pkcs1v15::decrypt(Some(rng), self, ciphertext),
-            PaddingScheme::OAEP {
-                mut digest,
-                mut mgf_digest,
-                label,
-            } => oaep::decrypt(
-                Some(rng),
-                self,
-                ciphertext,
-                &mut *digest,
-                &mut *mgf_digest,
-                label,
-            ),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
-    }
-
-    /// Sign the given digest.
-    pub fn sign(&self, padding: PaddingScheme, digest_in: &[u8]) -> Result<Vec<u8>> {
-        match padding {
-            // need to pass any Rng as the type arg, so the type checker is happy, it is not actually used for anything
-            PaddingScheme::PKCS1v15Sign { ref hash } => {
-                pkcs1v15::sign::<StdRng, _>(None, self, hash.as_ref(), digest_in)
-            }
-            PaddingScheme::PSS {
-                mut salt_rng,
-                mut digest,
-                salt_len,
-            } => pss::sign::<_, StdRng, _>(
-                &mut *salt_rng,
-                None,
-                self,
-                digest_in,
-                salt_len,
-                &mut *digest,
-            ),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
-    }
-
-    /// Sign the given digest.
-    ///
-    /// Use `rng` for blinding.
-    pub fn sign_blinded<R: Rng>(
-        &self,
-        rng: &mut R,
-        padding: PaddingScheme,
-        digest_in: &[u8],
-    ) -> Result<Vec<u8>> {
-        match padding {
-            PaddingScheme::PKCS1v15Sign { ref hash } => {
-                pkcs1v15::sign(Some(rng), self, hash.as_ref(), digest_in)
-            }
-            PaddingScheme::PSS {
-                mut salt_rng,
-                mut digest,
-                salt_len,
-            } => pss::sign::<_, R, _>(
-                &mut *salt_rng,
-                Some(rng),
-                self,
-                digest_in,
-                salt_len,
-                &mut *digest,
-            ),
-            _ => Err(Error::InvalidPaddingScheme),
-        }
-    }
-}
-
-/// Check that the public key is well formed and has an exponent within acceptable bounds.
-#[inline]
-pub fn check_public(public_key: &impl PublicKeyParts) -> Result<()> {
-    let public_key = public_key.e().to_u64().ok_or(Error::PublicExponentTooLarge)?;
-
-    if public_key < MIN_PUB_EXPONENT {
-        return Err(Error::PublicExponentTooSmall);
-    }
-
-    if public_key > MAX_PUB_EXPONENT {
-        return Err(Error::PublicExponentTooLarge);
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::internals;
 
-    use alloc::string::String;
-    use digest::{Digest, DynDigest};
     use num_traits::{FromPrimitive, ToPrimitive};
-    use rand::{distributions::Alphanumeric, rngs::StdRng, SeedableRng};
-    use sha1::Sha1;
-    use sha2::{Sha224, Sha256, Sha384, Sha512};
-    use sha3::{Sha3_256, Sha3_384, Sha3_512};
+    use rand::{rngs::StdRng, SeedableRng};
+
     use std::time::SystemTime;
 
     #[test]
@@ -541,43 +229,25 @@ mod tests {
         let private_key = RsaPrivateKey {
             pubkey_components: RsaPublicKey {
                 n: BigUint::from_u64(100).unwrap(),
-                e: BigUint::from_u64(200).unwrap(),
             },
-            d: BigUint::from_u64(123).unwrap(),
             primes: vec![],
-            precomputed: None,
         };
         let public_key: RsaPublicKey = private_key.into();
 
         assert_eq!(public_key.n().to_u64(), Some(100));
-        assert_eq!(public_key.e().to_u64(), Some(200));
     }
 
     fn test_key_basics(private_key: &RsaPrivateKey) {
         private_key.validate().expect("invalid private key");
 
-        assert!(
-            private_key.d() < private_key.n(),
-            "private exponent too large"
-        );
-
         let pub_key: RsaPublicKey = private_key.clone().into();
-        let m = BigUint::from_u64(42).expect("invalid 42");
-        let c = internals::encrypt(&pub_key, &m);
-        let m2 = internals::decrypt::<StdRng>(None, &private_key, &c)
-            .expect("unable to decrypt without blinding");
-        assert_eq!(m, m2);
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let mut rng = StdRng::seed_from_u64(seed.as_secs());
-        let m3 = internals::decrypt(Some(&mut rng), &private_key, &c)
-            .expect("unable to decrypt with blinding");
-        assert_eq!(m, m3);
+        let m = vec![42];
+        let signature = private_key.sign(&m).unwrap();
+        assert!(pub_key.verify(&m, &signature).is_ok());
     }
 
     macro_rules! key_generation {
-        ($name:ident, $multi:expr, $size:expr) => {
+        ($name:ident,  $size:expr) => {
             #[test]
             fn $name() {
                 let seed = SystemTime::now()
@@ -586,11 +256,7 @@ mod tests {
                 let mut rng = StdRng::seed_from_u64(seed.as_secs());
 
                 for _ in 0..10 {
-                    let private_key = if $multi == 2 {
-                        RsaPrivateKey::new(&mut rng, $size).expect("failed to generate key")
-                    } else {
-                        generate_multi_prime_key(&mut rng, $multi, $size).unwrap()
-                    };
+                    let private_key = generate_multi_prime_key_with_exp(&mut rng, $size).unwrap();
                     assert_eq!(private_key.n().bits(), $size);
 
                     test_key_basics(&private_key);
@@ -599,16 +265,16 @@ mod tests {
         };
     }
 
-    key_generation!(key_generation_128, 2, 128);
-    key_generation!(key_generation_1024, 2, 1024);
+    key_generation!(key_generation_128, 128);
+    key_generation!(key_generation_1024, 1024);
 
-    key_generation!(key_generation_multi_3_256, 3, 256);
+    key_generation!(key_generation_multi_3_256, 256);
 
-    key_generation!(key_generation_multi_4_64, 4, 64);
+    key_generation!(key_generation_multi_4_64, 64);
 
-    key_generation!(key_generation_multi_5_64, 5, 64);
-    key_generation!(key_generation_multi_8_576, 8, 576);
-    key_generation!(key_generation_multi_16_1024, 16, 1024);
+    key_generation!(key_generation_multi_5_64, 64);
+    key_generation!(key_generation_multi_8_576, 576);
+    key_generation!(key_generation_multi_16_1024, 1024);
 
     #[test]
     fn test_impossible_keys() {
@@ -617,33 +283,10 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap();
         let mut rng = StdRng::seed_from_u64(seed.as_secs());
-        for i in 0..32 {
-            let _ = RsaPrivateKey::new(&mut rng, i).is_err();
-            let _ = generate_multi_prime_key(&mut rng, 3, i);
-            let _ = generate_multi_prime_key(&mut rng, 4, i);
-            let _ = generate_multi_prime_key(&mut rng, 5, i);
+        for i in 0..12 {
+            assert!(RsaPrivateKey::new(&mut rng, i).is_err());
         }
-    }
-
-    #[test]
-    fn test_negative_decryption_value() {
-        let private_key = RsaPrivateKey::from_components(
-            BigUint::from_bytes_le(&vec![
-                99, 192, 208, 179, 0, 220, 7, 29, 49, 151, 75, 107, 75, 73, 200, 180,
-            ]),
-            BigUint::from_bytes_le(&vec![1, 0, 1]),
-            BigUint::from_bytes_le(&vec![
-                81, 163, 254, 144, 171, 159, 144, 42, 244, 133, 51, 249, 28, 12, 63, 65,
-            ]),
-            vec![
-                BigUint::from_bytes_le(&vec![105, 101, 60, 173, 19, 153, 3, 192]),
-                BigUint::from_bytes_le(&vec![235, 65, 160, 134, 32, 136, 6, 241]),
-            ],
-        );
-
-        for _ in 0..1000 {
-            test_key_basics(&private_key);
-        }
+        assert!(RsaPrivateKey::new(&mut rng, 13).is_ok());
     }
 
     #[test]
@@ -716,8 +359,6 @@ mod tests {
     #[test]
     fn invalid_coeff_private_key_regression() {
         let n = base64::decode("wC8GyQvTCZOK+iiBR5fGQCmzRCTWX9TQ3aRG5gGFk0wB6EFoLMAyEEqeG3gS8xhAm2rSWYx9kKufvNat3iWlbSRVqkcbpVAYlj2vTrpqDpJl+6u+zxFYoUEBevlJJkAhl8EuCccOA30fVpcfRvXPTtvRd3yFT9E9EwZljtgSI02w7gZwg7VIxaGeajh5Euz6ZVQZ+qNRKgXrRC7gPRqVyI6Dt0Jc+Su5KBGNn0QcPDzOahWha1ieaeMkFisZ9mdpsJoZ4tw5eicLaUomKzALHXQVt+/rcZSrCd6/7uUo11B/CYBM4UfSpwXaL88J9AE6A5++no9hmJzaF2LLp+Qwx4yY3j9TDutxSAjsraxxJOGZ3XyA9nG++Ybt3cxZ5fP7ROjxCfROBmVv5dYn0O9OBIqYeCH6QraNpZMadlLNIhyMv8Y+P3r5l/PaK4VJaEi5pPosnEPawp0W0yZDzmjk2z1LthaRx0aZVrAjlH0Rb/6goLUQ9qu1xsDtQVVpN4A89ZUmtTWORnnJr0+595eHHxssd2gpzqf4bPjNITdAEuOCCtpvyi4ls23zwuzryUYjcUOEnsXNQ+DrZpLKxdtsD/qNV/j1hfeyBoPllC3cV+6bcGOFcVGbjYqb+Kw1b0+jL69RSKQqgmS+qYqr8c48nDRxyq3QXhR8qtzUwBFSLVk=").unwrap();
-        let e = base64::decode("AQAB").unwrap();
-        let d = base64::decode("qQazSQ+FRN7nVK1bRsROMRB8AmsDwLVEHivlz1V3Td2Dr+oW3YUMgxedhztML1IdQJPq/ad6qErJ6yRFNySVIjDaxzBTOEoB1eHa1btOnBJWb8rVvvjaorixvJ6Tn3i4EuhsvVy9DoR1k4rGj3qSIiFjUVvLRDAbLyhpGgEfsr0Z577yJmTC5E8JLRMOKX8Tmxsk3jPVpsgd65Hu1s8S/ZmabwuHCf9SkdMeY/1bd/9i7BqqJeeDLE4B5x1xcC3z3scqDUTzqGO+vZPhjgprPDRlBamVwgenhr7KwCn8iaLamFinRVwOAag8BeBqOJj7lURiOsKQa9FIX1kdFUS1QMQxgtPycLjkbvCJjriqT7zWKsmJ7l8YLs6Wmm9/+QJRwNCEVdMTXKfCP1cJjudaiskEQThfUldtgu8gUDNYbQ/Filb2eKfiX4h1TiMxZqUZHVZyb9nShbQoXJ3vj/MGVF0QM8TxhXM8r2Lv9gDYU5t9nQlUMLhs0jVjai48jHABbFNyH3sEcOmJOIwJrCXw1dzG7AotwyaEVUHOmL04TffmwCFfnyrLjbFgnyOeoyIIBYjcY7QFRm/9nupXMTH5hZ2qrHfCJIp0KK4tNBdQqmnHapFl5l6Le1s4qBS5bEIzjitobLvAFm9abPlDGfxmY6mlrMK4+nytwF9Ct7wc1AE=").unwrap();
         let primes = vec![
             base64::decode("9kQWEAzsbzOcdPa+s5wFfw4XDd7bB1q9foZ31b1+TNjGNxbSBCFlDF1q98vwpV6nM8bWDh/wtbNoETSQDgpEnYOQ26LWEw6YY1+q1Q2GGEFceYUf+Myk8/vTc8TN6Zw0bKZBWy10Qo8h7xk4JpzuI7NcxvjJYTkS9aErFxi3vVH0aiZC0tmfaCqr8a2rJxyVwqreRpOjwAWrotMsf2wGsF4ofx5ScoFy5GB5fJkkdOrW1LyTvZAUCX3cstPr19+TNC5zZOk7WzZatnCkN5H5WzalWtZuu0oVL205KPOa3R8V2yv5e6fm0v5fTmqSuvjmaMJLXCN4QJkmIzojO99ckQ==").unwrap(),
             base64::decode("x8exdMjVA2CiI+Thx7loHtVcevoeE2sZ7btRVAvmBqo+lkHwxb7FHRnWvuj6eJSlD2f0T50EewIhhiW3R9BmktCk7hXjbSCnC1u9Oxc1IAUm/7azRqyfCMx43XhLxpD+xkBCpWkKDLxGczsRwTuaP3lKS3bSdBrNlGmdblubvVBIq4YZ2vXVlnYtza0cS+dgCK7BGTqUsrCUd/ZbIvwcwZkZtpkhj1KQfto9X/0OMurBzAqbkeq1cyRHXHkOfN/qbUIIRqr9Ii7Eswf9Vk8xp2O1Nt8nzcYS9PFD12M5eyaeFEkEYfpNMNGuTzp/31oqVjbpoCxS6vuWAZyADxhISQ==").unwrap(),
@@ -728,212 +369,7 @@ mod tests {
 
         RsaPrivateKey::from_components(
             BigUint::from_bytes_be(&n),
-            BigUint::from_bytes_be(&e),
-            BigUint::from_bytes_be(&d),
             primes.iter().map(|p| BigUint::from_bytes_be(p)).collect(),
-        );
-    }
-
-    fn get_private_key() -> RsaPrivateKey {
-        // -----BEGIN RSA PRIVATE KEY-----
-        // MIIEpAIBAAKCAQEA05e4TZikwmE47RtpWoEG6tkdVTvwYEG2LT/cUKBB4iK49FKW
-        // icG4LF5xVU9d1p+i9LYVjPDb61eBGg/DJ+HyjnT+dNO8Fmweq9wbi1e5NMqL5bAL
-        // TymXW8yZrK9BW1m7KKZ4K7QaLDwpdrPBjbre9i8AxrsiZkAJUJbAzGDSL+fvmH11
-        // xqgbENlr8pICivEQ3HzBu8Q9Iq2rN5oM1dgHjMeA/1zWIJ3qNMkiz3hPdxfkKNdb
-        // WuyP8w5fAUFRB2bi4KuNRzyE6HELK5gifD2wlTN600UvGeK5v7zN2BSKv2d2+lUn
-        // debnWVbkUimuWpxGlJurHmIvDkj1ZSSoTtNIOwIDAQABAoIBAQDE5wxokWLJTGYI
-        // KBkbUrTYOSEV30hqmtvoMeRY1zlYMg3Bt1VFbpNwHpcC12+wuS+Q4B0f4kgVMoH+
-        // eaqXY6kvrmnY1+zRRN4p+hNb0U+Vc+NJ5FAx47dpgvWDADgmxVLomjl8Gga9IWNI
-        // hjDZLowrtkPXq+9wDaldaFyUFImkb1S1MW9itdLDp/G70TTLNzU6RGg/3J2V02RY
-        // 3iL2xEBX/nSgpDbEMI9z9NpC81xHrBanE41IOvyR5B3DoRJzguDA9RGbAiG0/GOd
-        // a5w4F3pt6bUm69iMONeYLAf5ig79h31Qiq4nW5RpFcAuLhEG0XXXTsZ3f16A0SwF
-        // PZx74eNBAoGBAPgnu/OkGHfHzFmuv0LtSynDLe/LjtloY9WwkKBaiTDdYkohydz5
-        // g4Vo/foN9luEYqXyrJE9bFb5dVMr2OePsHvUBcqZpIS89Z8Bm73cs5M/K85wYwC0
-        // 97EQEgxd+QGBWQZ8NdowYaVshjWlK1QnOzEnG0MR8Hld9gIeY1XhpC5hAoGBANpI
-        // F84Aid028q3mo/9BDHPsNL8bT2vaOEMb/t4RzvH39u+nDl+AY6Ox9uFylv+xX+76
-        // CRKgMluNH9ZaVZ5xe1uWHsNFBy4OxSA9A0QdKa9NZAVKBFB0EM8dp457YRnZCexm
-        // 5q1iW/mVsnmks8W+fYlc18W5xMSX/ecwkW/NtOQbAoGAHabpz4AhKFbodSLrWbzv
-        // CUt4NroVFKdjnoodjfujfwJFF2SYMV5jN9LG3lVCxca43ulzc1tqka33Nfv8TBcg
-        // WHuKQZ5ASVgm5VwU1wgDMSoQOve07MWy/yZTccTc1zA0ihDXgn3bfR/NnaVh2wlh
-        // CkuI92eyW1494hztc7qlmqECgYEA1zenyOQ9ChDIW/ABGIahaZamNxsNRrDFMl3j
-        // AD+cxHSRU59qC32CQH8ShRy/huHzTaPX2DZ9EEln76fnrS4Ey7uLH0rrFl1XvT6K
-        // /timJgLvMEvXTx/xBtUdRN2fUqXtI9odbSyCtOYFL+zVl44HJq2UzY4pVRDrNcxs
-        // SUkQJqsCgYBSaNfPBzR5rrstLtTdZrjImRW1LRQeDEky9WsMDtCTYUGJTsTSfVO8
-        // hkU82MpbRVBFIYx+GWIJwcZRcC7OCQoV48vMJllxMAAjqG/p00rVJ+nvA7et/nNu
-        // BoB0er/UmDm4Ly/97EO9A0PKMOE5YbMq9s3t3RlWcsdrU7dvw+p2+A==
-        // -----END RSA PRIVATE KEY-----
-
-        RsaPrivateKey::from_components(
-            BigUint::parse_bytes(b"00d397b84d98a4c26138ed1b695a8106ead91d553bf06041b62d3fdc50a041e222b8f4529689c1b82c5e71554f5dd69fa2f4b6158cf0dbeb57811a0fc327e1f28e74fe74d3bc166c1eabdc1b8b57b934ca8be5b00b4f29975bcc99acaf415b59bb28a6782bb41a2c3c2976b3c18dbadef62f00c6bb226640095096c0cc60d22fe7ef987d75c6a81b10d96bf292028af110dc7cc1bbc43d22adab379a0cd5d8078cc780ff5cd6209dea34c922cf784f7717e428d75b5aec8ff30e5f0141510766e2e0ab8d473c84e8710b2b98227c3db095337ad3452f19e2b9bfbccdd8148abf6776fa552775e6e75956e45229ae5a9c46949bab1e622f0e48f56524a84ed3483b", 16).unwrap(),
-            BigUint::from_u64(65537).unwrap(),
-            BigUint::parse_bytes(b"00c4e70c689162c94c660828191b52b4d8392115df486a9adbe831e458d73958320dc1b755456e93701e9702d76fb0b92f90e01d1fe248153281fe79aa9763a92fae69d8d7ecd144de29fa135bd14f9573e349e45031e3b76982f583003826c552e89a397c1a06bd2163488630d92e8c2bb643d7abef700da95d685c941489a46f54b5316f62b5d2c3a7f1bbd134cb37353a44683fdc9d95d36458de22f6c44057fe74a0a436c4308f73f4da42f35c47ac16a7138d483afc91e41dc3a1127382e0c0f5119b0221b4fc639d6b9c38177a6de9b526ebd88c38d7982c07f98a0efd877d508aae275b946915c02e2e1106d175d74ec6777f5e80d12c053d9c7be1e341", 16).unwrap(),
-            vec![
-                BigUint::parse_bytes(b"00f827bbf3a41877c7cc59aebf42ed4b29c32defcb8ed96863d5b090a05a8930dd624a21c9dcf9838568fdfa0df65b8462a5f2ac913d6c56f975532bd8e78fb07bd405ca99a484bcf59f019bbddcb3933f2bce706300b4f7b110120c5df9018159067c35da3061a56c8635a52b54273b31271b4311f0795df6021e6355e1a42e61",16).unwrap(),
-                BigUint::parse_bytes(b"00da4817ce0089dd36f2ade6a3ff410c73ec34bf1b4f6bda38431bfede11cef1f7f6efa70e5f8063a3b1f6e17296ffb15feefa0912a0325b8d1fd65a559e717b5b961ec345072e0ec5203d03441d29af4d64054a04507410cf1da78e7b6119d909ec66e6ad625bf995b279a4b3c5be7d895cd7c5b9c4c497fde730916fcdb4e41b", 16).unwrap()
-            ],
-        )
-    }
-
-    #[test]
-    fn test_encrypt_decrypt_oaep() {
-        let priv_key = get_private_key();
-        do_test_encrypt_decrypt_oaep::<Sha1>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha224>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha256>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha384>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha512>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha3_256>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha3_384>(&priv_key);
-        do_test_encrypt_decrypt_oaep::<Sha3_512>(&priv_key);
-
-        do_test_oaep_with_different_hashes::<Sha1, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha224, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha256, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha384, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha512, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha3_256, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha3_384, Sha1>(&priv_key);
-        do_test_oaep_with_different_hashes::<Sha3_512, Sha1>(&priv_key);
-    }
-
-    fn do_test_encrypt_decrypt_oaep<D: 'static + Digest + DynDigest>(prk: &RsaPrivateKey) {
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let mut rng = StdRng::seed_from_u64(seed.as_secs());
-
-        let k = prk.size();
-
-        for i in 1..8 {
-            let mut input: Vec<u8> = (0..i * 8).map(|_| rng.gen()).collect();
-            if input.len() > k - 11 {
-                input = input[0..k - 11].to_vec();
-            }
-            let has_label: bool = rng.gen();
-            let label: Option<String> = if has_label {
-                Some(
-                    rng.clone()
-                        .sample_iter(&Alphanumeric)
-                        .take(30)
-                        .map(char::from)
-                        .collect(),
-                )
-            } else {
-                None
-            };
-
-            let pub_key: RsaPublicKey = prk.into();
-
-            let ciphertext = if let Some(ref label) = label {
-                let padding = PaddingScheme::new_oaep_with_label::<D, _>(label);
-                pub_key.encrypt(&mut rng, padding, &input).unwrap()
-            } else {
-                let padding = PaddingScheme::new_oaep::<D>();
-                pub_key.encrypt(&mut rng, padding, &input).unwrap()
-            };
-
-            assert_ne!(input, ciphertext);
-            let blind: bool = rng.gen();
-
-            let padding = if let Some(ref label) = label {
-                PaddingScheme::new_oaep_with_label::<D, _>(label)
-            } else {
-                PaddingScheme::new_oaep::<D>()
-            };
-
-            let plaintext = if blind {
-                prk.decrypt(padding, &ciphertext).unwrap()
-            } else {
-                prk.decrypt_blinded(&mut rng, padding, &ciphertext).unwrap()
-            };
-
-            assert_eq!(input, plaintext);
-        }
-    }
-
-    fn do_test_oaep_with_different_hashes<
-        D: 'static + Digest + DynDigest,
-        U: 'static + Digest + DynDigest,
-    >(
-        prk: &RsaPrivateKey,
-    ) {
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let mut rng = StdRng::seed_from_u64(seed.as_secs());
-
-        let k = prk.size();
-
-        for i in 1..8 {
-            let mut input: Vec<u8> = (0..i * 8).map(|_| rng.gen()).collect();
-            if input.len() > k - 11 {
-                input = input[0..k - 11].to_vec();
-            }
-            let has_label: bool = rng.gen();
-            let label: Option<String> = if has_label {
-                Some(
-                    rng.clone()
-                        .sample_iter(&Alphanumeric)
-                        .take(30)
-                        .map(char::from)
-                        .collect(),
-                )
-            } else {
-                None
-            };
-
-            let pub_key: RsaPublicKey = prk.into();
-
-            let ciphertext = if let Some(ref label) = label {
-                let padding = PaddingScheme::new_oaep_with_mgf_hash_with_label::<D, U, _>(label);
-                pub_key.encrypt(&mut rng, padding, &input).unwrap()
-            } else {
-                let padding = PaddingScheme::new_oaep_with_mgf_hash::<D, U>();
-                pub_key.encrypt(&mut rng, padding, &input).unwrap()
-            };
-
-            assert_ne!(input, ciphertext);
-            let blind: bool = rng.gen();
-
-            let padding = if let Some(ref label) = label {
-                PaddingScheme::new_oaep_with_mgf_hash_with_label::<D, U, _>(label)
-            } else {
-                PaddingScheme::new_oaep_with_mgf_hash::<D, U>()
-            };
-
-            let plaintext = if blind {
-                prk.decrypt(padding, &ciphertext).unwrap()
-            } else {
-                prk.decrypt_blinded(&mut rng, padding, &ciphertext).unwrap()
-            };
-
-            assert_eq!(input, plaintext);
-        }
-    }
-    #[test]
-    fn test_decrypt_oaep_invalid_hash() {
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let mut rng = StdRng::seed_from_u64(seed.as_secs());
-        let priv_key = get_private_key();
-        let pub_key: RsaPublicKey = (&priv_key).into();
-        let ciphertext = pub_key
-            .encrypt(
-                &mut rng,
-                PaddingScheme::new_oaep::<Sha1>(),
-                "a_plain_text".as_bytes(),
-            )
-            .unwrap();
-        assert!(
-            priv_key
-                .decrypt_blinded(
-                    &mut rng,
-                    PaddingScheme::new_oaep_with_label::<Sha1, _>("label"),
-                    &ciphertext,
-                )
-                .is_err(),
-            "decrypt should have failed on hash verification"
         );
     }
 }
