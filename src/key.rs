@@ -33,7 +33,7 @@ pub trait PrivateKey: PublicKeyParts {
     derive(Serialize, Deserialize),
     serde(crate = "serde_crate")
 )]
-pub struct RsaPublicKey {
+pub struct RWPublicKey {
     n: BigUint,
 }
 
@@ -44,23 +44,23 @@ pub struct RsaPublicKey {
     derive(Serialize, Deserialize),
     serde(crate = "serde_crate")
 )]
-pub struct RsaPrivateKey {
+pub struct RWPrivateKey {
     /// Public components of the private key.
-    pubkey_components: RsaPublicKey,
+    pubkey_components: RWPublicKey,
     /// Prime factors of N, contains >= 2 elements.
     pub(crate) primes: Vec<BigUint>,
 }
 
-impl PartialEq for RsaPrivateKey {
+impl PartialEq for RWPrivateKey {
     #[inline]
-    fn eq(&self, other: &RsaPrivateKey) -> bool {
+    fn eq(&self, other: &RWPrivateKey) -> bool {
         self.pubkey_components == other.pubkey_components && self.primes == other.primes
     }
 }
 
-impl Eq for RsaPrivateKey {}
+impl Eq for RWPrivateKey {}
 
-impl Zeroize for RsaPrivateKey {
+impl Zeroize for RWPrivateKey {
     fn zeroize(&mut self) {
         for prime in self.primes.iter_mut() {
             prime.zeroize();
@@ -69,30 +69,30 @@ impl Zeroize for RsaPrivateKey {
     }
 }
 
-impl Drop for RsaPrivateKey {
+impl Drop for RWPrivateKey {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-impl Deref for RsaPrivateKey {
-    type Target = RsaPublicKey;
-    fn deref(&self) -> &RsaPublicKey {
+impl Deref for RWPrivateKey {
+    type Target = RWPublicKey;
+    fn deref(&self) -> &RWPublicKey {
         &self.pubkey_components
     }
 }
 
-impl From<RsaPrivateKey> for RsaPublicKey {
-    fn from(private_key: RsaPrivateKey) -> Self {
+impl From<RWPrivateKey> for RWPublicKey {
+    fn from(private_key: RWPrivateKey) -> Self {
         (&private_key).into()
     }
 }
 
-impl From<&RsaPrivateKey> for RsaPublicKey {
-    fn from(private_key: &RsaPrivateKey) -> Self {
+impl From<&RWPrivateKey> for RWPublicKey {
+    fn from(private_key: &RWPrivateKey) -> Self {
         let n = private_key.n.clone();
 
-        RsaPublicKey { n }
+        RWPublicKey { n }
     }
 }
 
@@ -105,74 +105,74 @@ pub trait PublicKey: PublicKeyParts {
     fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()>;
 }
 
-impl PublicKeyParts for RsaPublicKey {
+impl PublicKeyParts for RWPublicKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl PublicKey for RsaPublicKey {
+impl PublicKey for RWPublicKey {
     fn verify(&self, _hashed: &[u8], _sig: &[u8]) -> Result<()> {
         todo!()
     }
 }
 
-impl RsaPublicKey {
+impl RWPublicKey {
     /// Create a new key from its components.
     pub fn new(n: BigUint) -> Result<Self> {
-        let k = RsaPublicKey { n };
+        let k = RWPublicKey { n };
 
         Ok(k)
     }
 }
 
-impl<'a> PublicKeyParts for &'a RsaPublicKey {
+impl<'a> PublicKeyParts for &'a RWPublicKey {
     /// Returns the modulus of the key.
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl<'a> PublicKey for &'a RsaPublicKey {
+impl<'a> PublicKey for &'a RWPublicKey {
     fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()> {
         (*self).verify(hashed, sig)
     }
 }
 
-impl PublicKeyParts for RsaPrivateKey {
+impl PublicKeyParts for RWPrivateKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl PrivateKey for RsaPrivateKey {
+impl PrivateKey for RWPrivateKey {
     fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>> {
         (*self).sign(digest_in)
     }
 }
 
-impl<'a> PublicKeyParts for &'a RsaPrivateKey {
+impl<'a> PublicKeyParts for &'a RWPrivateKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl<'a> PrivateKey for &'a RsaPrivateKey {
+impl<'a> PrivateKey for &'a RWPrivateKey {
     fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>> {
         (*self).sign(digest_in)
     }
 }
 
-impl RsaPrivateKey {
+impl RWPrivateKey {
     /// Generate a new Rsa key pair of the given bit size using the passed in `rng`.
-    pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<RsaPrivateKey> {
+    pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<RWPrivateKey> {
         generate_multi_prime_key_with_exp(rng, bit_size)
     }
 
     /// Constructs an RSA key pair from the individual components.
-    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> RsaPrivateKey {
-        RsaPrivateKey {
-            pubkey_components: RsaPublicKey { n },
+    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> RWPrivateKey {
+        RWPrivateKey {
+            pubkey_components: RWPublicKey { n },
             primes,
         }
     }
@@ -181,9 +181,9 @@ impl RsaPrivateKey {
     ///
     /// Generally this is not needed since `RsaPrivateKey` implements the `PublicKey` trait,
     /// but it can occationally be useful to discard the private information entirely.
-    pub fn to_public_key(&self) -> RsaPublicKey {
+    pub fn to_public_key(&self) -> RWPublicKey {
         // Safe to unwrap since n and e are already verified.
-        RsaPublicKey::new(self.n().clone()).unwrap()
+        RWPublicKey::new(self.n().clone()).unwrap()
     }
 
     /// Returns the prime factors.
@@ -226,21 +226,21 @@ mod tests {
 
     #[test]
     fn test_from_into() {
-        let private_key = RsaPrivateKey {
-            pubkey_components: RsaPublicKey {
+        let private_key = RWPrivateKey {
+            pubkey_components: RWPublicKey {
                 n: BigUint::from_u64(100).unwrap(),
             },
             primes: vec![],
         };
-        let public_key: RsaPublicKey = private_key.into();
+        let public_key: RWPublicKey = private_key.into();
 
         assert_eq!(public_key.n().to_u64(), Some(100));
     }
 
-    fn test_key_basics(private_key: &RsaPrivateKey) {
+    fn test_key_basics(private_key: &RWPrivateKey) {
         private_key.validate().expect("invalid private key");
 
-        let pub_key: RsaPublicKey = private_key.clone().into();
+        let pub_key: RWPublicKey = private_key.clone().into();
         let m = vec![42];
         let signature = private_key.sign(&m).unwrap();
         assert!(pub_key.verify(&m, &signature).is_ok());
@@ -284,9 +284,9 @@ mod tests {
             .unwrap();
         let mut rng = StdRng::seed_from_u64(seed.as_secs());
         for i in 0..12 {
-            assert!(RsaPrivateKey::new(&mut rng, i).is_err());
+            assert!(RWPrivateKey::new(&mut rng, i).is_err());
         }
-        assert!(RsaPrivateKey::new(&mut rng, 13).is_ok());
+        assert!(RWPrivateKey::new(&mut rng, 13).is_ok());
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
         use serde_test::{assert_tokens, Token};
 
         let mut rng = XorShiftRng::from_seed([1; 16]);
-        let priv_key = RsaPrivateKey::new(&mut rng, 64).expect("failed to generate key");
+        let priv_key = RWPrivateKey::new(&mut rng, 64).expect("failed to generate key");
 
         let priv_tokens = [
             Token::Struct {
@@ -353,7 +353,7 @@ mod tests {
             Token::SeqEnd,
             Token::StructEnd,
         ];
-        assert_tokens(&RsaPublicKey::from(priv_key), &priv_tokens);
+        assert_tokens(&RWPublicKey::from(priv_key), &priv_tokens);
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod tests {
             base64::decode("CUWC+hRWOT421kwRllgVjy6FYv6jQUcgDNHeAiYZnf5HjS9iK2ki7v8G5dL/0f+Yf+NhE/4q8w4m8go51hACrVpP1p8GJDjiT09+RsOzITsHwl+ceEKoe56ZW6iDHBLlrNw5/MtcYhKpjNU9KJ2udm5J/c9iislcjgckrZG2IB8ADgXHMEByZ5DgaMl4AKZ1Gx8/q6KftTvmOT5rNTMLi76VN5KWQcDWK/DqXiOiZHM7Nr4dX4me3XeRgABJyNR8Fqxj3N1+HrYLe/zs7LOaK0++F9Ul3tLelhrhsvLxei3oCZkF9A/foD3on3luYA+1cRcxWpSY3h2J4/22+yo4+Q==").unwrap(),
         ];
 
-        RsaPrivateKey::from_components(
+        RWPrivateKey::from_components(
             BigUint::from_bytes_be(&n),
             primes.iter().map(|p| BigUint::from_bytes_be(p)).collect(),
         );

@@ -7,7 +7,7 @@ use num_traits::{One, Zero};
 use rand::Rng;
 
 use crate::errors::{Error, Result};
-use crate::key::RsaPrivateKey;
+use crate::key::RWPrivateKey;
 
 /// Default exponent for RSA keys.
 const EXP: u64 = 2;
@@ -27,7 +27,7 @@ const N_PRIMES: usize = 2;
 pub fn generate_multi_prime_key_with_exp<R: Rng>(
     rng: &mut R,
     bit_size: usize,
-) -> Result<RsaPrivateKey> {
+) -> Result<RWPrivateKey> {
     if bit_size < 64 {
         let prime_limit = (1u64 << (bit_size / N_PRIMES) as u64) as f64;
 
@@ -89,5 +89,5 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         }
     }
 
-    Ok(RsaPrivateKey::from_components(n_final, primes))
+    Ok(RWPrivateKey::from_components(n_final, primes))
 }

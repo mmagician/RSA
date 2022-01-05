@@ -172,4 +172,4 @@ pub mod errors;
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
 #[cfg(feature = "alloc")]
-pub use self::key::{PublicKey, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
+pub use self::key::{PublicKey, PublicKeyParts, RWPrivateKey, RWPublicKey};
