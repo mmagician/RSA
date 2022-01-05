@@ -1,13 +1,12 @@
 use alloc::vec;
 
+use crate::errors::{Error, Result};
+use crate::key::RWPrivateKey;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;
-use num_traits::{One, Zero};
+use num_traits::{FromPrimitive, One, Zero};
 use rand::Rng;
-
-use crate::errors::{Error, Result};
-use crate::key::RWPrivateKey;
 
 /// Default exponent for RSA keys.
 const EXP: u64 = 2;
@@ -59,22 +58,27 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         // shift todo to compensate for lost bits: the mean value of 0.11...
         // is 7/8, so todo + shift - nprimes * log2(7/8) ~= bits - 1/2
         // will give good results.
+
+        // for efficient sqrt calculations, we need both primes 3 mod 4
+        let four: BigUint = BigUint::from_u64(4).unwrap();
         for (i, prime) in primes.iter_mut().enumerate() {
-            *prime = rng.gen_prime(todo / (N_PRIMES - i));
+            let mut tmp;
+            loop {
+                tmp = rng.gen_prime(todo / (N_PRIMES - i));
+                if &tmp % &four == BigUint::from_u64(3).unwrap() {
+                    break;
+                }
+            }
+            *prime = tmp;
             todo -= prime.bits();
         }
 
-        // Makes sure that primes is pairwise unequal.
-        for (i, prime1) in primes.iter().enumerate() {
-            for prime2 in primes.iter().take(i) {
-                if prime1 == prime2 {
-                    continue 'next;
-                }
-            }
+        // Makes sure that primes are unequal.
+        if primes[0] == primes[1] {
+            continue 'next;
         }
 
         let mut n = BigUint::one();
-
         for prime in &primes {
             n *= prime;
         }

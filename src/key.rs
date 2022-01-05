@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::ops::Deref;
 
 use num_bigint::BigUint;
-use num_traits::One;
+use num_traits::{FromPrimitive, One};
 use rand::Rng;
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
@@ -198,6 +198,11 @@ impl RWPrivateKey {
         let mut m = BigUint::one();
         for prime in &self.primes {
             // Any primes ≤ 1 will cause divide-by-zero panics later.
+            assert_eq!(
+                prime % BigUint::from_u64(4).unwrap(),
+                BigUint::from_u64(3).unwrap()
+            );
+
             if *prime < BigUint::one() {
                 return Err(Error::InvalidPrime);
             }
