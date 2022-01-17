@@ -1,16 +1,19 @@
 use alloc::vec::Vec;
-use digest::DynDigest;
 use core::ops::Deref;
+use digest::{Digest, DynDigest, FixedOutput, FixedOutputReset, Reset, Update};
+use rand::prelude::StdRng;
 
 use num_bigint::BigUint;
 use num_traits::{FromPrimitive, One};
-use rand::Rng;
+use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
+
+const RANDOMIZER_BYTES: usize = 1;
 
 pub trait PublicKeyParts {
     /// Returns the modulus of the key.
@@ -23,7 +26,7 @@ pub trait PublicKeyParts {
     }
 }
 
-pub trait PrivateKey<H: Default + DynDigest + Clone>: PublicKeyParts {
+pub trait PrivateKey<H: Digest + FixedOutputReset>: PublicKeyParts {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>>;
 }
 
@@ -146,9 +149,27 @@ impl PublicKeyParts for RWPrivateKey {
     }
 }
 
-impl<H: Default + DynDigest + Clone>PrivateKey<H> for RWPrivateKey {
+impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
-        (*self).sign(message)
+        let mut rng = thread_rng();
+        let mut digest;
+        let mut hasher = H::new();
+        let mut u: [u8; RANDOMIZER_BYTES];
+        // try different randomisers `u` until we find one that satisifes
+        // H(m, u) == x^2
+        // for some x
+        loop {
+            u = rng.gen();
+            Digest::update(&mut hasher, message);
+            Digest::update(&mut hasher, &u);
+            digest = hasher.finalize_reset().to_vec();
+            if digest[0] == 0 {
+                break;
+            } else {
+                continue;
+            }
+        }
+        Ok(digest)
     }
 }
 
@@ -214,10 +235,6 @@ impl RWPrivateKey {
         }
 
         Ok(())
-    }
-
-    pub fn sign(&self, _message: &[u8]) -> Result<Vec<u8>> {
-        todo!()
     }
 }
 
