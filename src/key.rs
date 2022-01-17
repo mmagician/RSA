@@ -1,9 +1,8 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
 use digest::{Digest, DynDigest, FixedOutput, FixedOutputReset, Reset, Update};
-use rand::prelude::StdRng;
-
-use num_bigint::BigUint;
+use num_integer::Integer;
+use num_bigint::{BigUint, RandBigInt};
 use num_traits::{FromPrimitive, One};
 use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
@@ -14,6 +13,8 @@ use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
 
 const RANDOMIZER_BYTES: usize = 1;
+type DigestResult = Vec<u8>;
+type Randomiser = [u8; RANDOMIZER_BYTES];
 
 pub trait PublicKeyParts {
     /// Returns the modulus of the key.
@@ -27,7 +28,7 @@ pub trait PublicKeyParts {
 }
 
 pub trait PrivateKey<H: Digest + FixedOutputReset>: PublicKeyParts {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>>;
+    fn sign(&self, message: &[u8]) -> Result<(DigestResult, Randomiser)>;
 }
 
 /// Represents the public part of an RSA key.
@@ -150,26 +151,34 @@ impl PublicKeyParts for RWPrivateKey {
 }
 
 impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+    fn sign(&self, message: &[u8]) -> Result<(DigestResult, Randomiser)> {
         let mut rng = thread_rng();
         let mut digest;
         let mut hasher = H::new();
         let mut u: [u8; RANDOMIZER_BYTES];
+        let mut u: Randomiser;
         // try different randomisers `u` until we find one that satisifes
         // H(m, u) == x^2
         // for some x
+        let s;
         loop {
             u = rng.gen();
             Digest::update(&mut hasher, message);
             Digest::update(&mut hasher, &u);
             digest = hasher.finalize_reset().to_vec();
-            if digest[0] == 0 {
-                break;
-            } else {
-                continue;
+            // if the current digest is a valid Quadratic Residue
+            // return the sqrt
+            // Otherwise, try another u
+            let c = BigUint::from_bytes_le(&digest);
+            match self.sqrt_mod_n(&c) {
+                Ok(sqrt) => {
+                    s = sqrt;
+                    break;
+                }
+                _ => continue,
             }
         }
-        Ok(digest)
+        Ok((s, u))
     }
 }
 
@@ -235,6 +244,29 @@ impl RWPrivateKey {
         }
 
         Ok(())
+    }
+
+    /// Compute the sqrt of `c` mod n, where n is composite
+    /// First, the quadratic residuosity test is performed by computing
+    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt modulo p,
+    /// to obtain intermediate solution x_p. Repeat the same for second secret prime q to get x_q.
+    /// Finally, combine the two using Chinese Remainder Theorem.
+    fn sqrt_mod_n(&self, c: &BigUint) -> Result<DigestResult> {
+        // first, checking that Legendre == 1
+        let legendre_p = c.modpow(&(&self.primes[0] - BigUint::one()), &self.primes[0]);
+        let legendre_q = c.modpow(&(&self.primes[1] - BigUint::one()), &self.primes[1]);
+        if legendre_p != BigUint::one() || legendre_q != BigUint::one() {
+            return Err(Error::QuadraticResidueNotFound);
+        }
+
+        // Now compute the intermediate sqrt values modulo p and modulo q
+        let (exponent, remainder) =
+            (&self.n + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
+        // since prime == 3 mod 4, the remainder should always be 0
+        assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
+        let x_p = c.modpow(&exponent, &self.primes[0]);
+        let x_q = c.modpow(&exponent, &self.primes[1]);
+        todo!();
     }
 }
 

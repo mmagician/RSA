@@ -12,6 +12,7 @@ pub enum Error {
     InvalidCoefficient,
     Internal,
     TooSmallBitSize,
+    QuadraticResidueNotFound,
 }
 
 #[cfg(feature = "std")]
@@ -27,6 +28,7 @@ impl core::fmt::Display for Error {
             Error::InvalidCoefficient => write!(f, "invalid coefficient"),
             Error::Internal => write!(f, "internal error"),
             Error::TooSmallBitSize => write!(f, "too few bits requested"),
+            Error::QuadraticResidueNotFound => write!(f, "no quadratic residue for this value"),
         }
     }
 }
