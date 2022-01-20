@@ -1,12 +1,14 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
 use digest::{Digest, DynDigest, FixedOutput, FixedOutputReset, Reset, Update};
+use num_bigint::algorithms::extended_gcd;
+use num_bigint::{BigInt, BigUint, RandBigInt, Sign, ToBigInt};
 use num_integer::Integer;
-use num_bigint::{BigUint, RandBigInt};
-use num_traits::{FromPrimitive, One};
+use num_traits::{FromPrimitive, One, Signed};
 use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
+use std::ops::Div;
 use zeroize::Zeroize;
 
 use crate::algorithms::generate_multi_prime_key_with_exp;
@@ -156,7 +158,6 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
         let mut digest;
         let mut hasher = H::new();
         let mut u: [u8; RANDOMIZER_BYTES];
-        let mut u: Randomiser;
         // try different randomisers `u` until we find one that satisifes
         // H(m, u) == x^2
         // for some x
@@ -169,7 +170,8 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
             // if the current digest is a valid Quadratic Residue
             // return the sqrt
             // Otherwise, try another u
-            let c = BigUint::from_bytes_le(&digest);
+            let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
+            // let c = BigUint::from_u8(10).unwrap();
             match self.sqrt_mod_n(&c) {
                 Ok(sqrt) => {
                     s = sqrt;
@@ -178,7 +180,7 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
                 _ => continue,
             }
         }
-        Ok((s, u))
+        Ok((s.to_bytes_le(), u))
     }
 }
 
@@ -248,25 +250,96 @@ impl RWPrivateKey {
 
     /// Compute the sqrt of `c` mod n, where n is composite
     /// First, the quadratic residuosity test is performed by computing
-    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt modulo p,
-    /// to obtain intermediate solution x_p. Repeat the same for second secret prime q to get x_q.
+    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
     /// Finally, combine the two using Chinese Remainder Theorem.
-    fn sqrt_mod_n(&self, c: &BigUint) -> Result<DigestResult> {
+    fn sqrt_mod_n(&self, c: &BigUint) -> Result<BigUint> {
+        assert!(&self.primes[0] < &self.primes[1]);
         // first, checking that Legendre == 1
-        let legendre_p = c.modpow(&(&self.primes[0] - BigUint::one()), &self.primes[0]);
-        let legendre_q = c.modpow(&(&self.primes[1] - BigUint::one()), &self.primes[1]);
+        let legendre_p: BigUint = c.modpow(
+            &((&self.primes[0] - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &self.primes[0],
+        );
+        let legendre_q: BigUint = c.modpow(
+            &((&self.primes[1] - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &self.primes[1],
+        );
         if legendre_p != BigUint::one() || legendre_q != BigUint::one() {
             return Err(Error::QuadraticResidueNotFound);
         }
 
-        // Now compute the intermediate sqrt values modulo p and modulo q
-        let (exponent, remainder) =
-            (&self.n + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
-        // since prime == 3 mod 4, the remainder should always be 0
+        // Now use Chinese Remainder Theorem to compute x mod n
+        // Generalised CRT is stated as:
+        // x == a_0 mod (n_0)
+        // x == a_1 mod (n_1)
+        // ...
+        // x == a_(k-1) mod (n_(k-1))
+        // And the solution is given by:
+        // x = x_0 * N_0 * a_0 + ... + x_(k-1) * N_(k-1) * a_(k-1)
+        // where:
+        // N_i = n / n_i
+        // N_i * x_i == 1
+
+        // For the specific case:
+        // x == a_0 mod p
+        // x == a_1 mod q
+        //
+        // a_0 == sqrt(c) mod p
+        // a_1 == sqrt(c) mod q
+        //
+        // N_0 = n / n_0 = n / p = q
+        // N_1 = p
+
+        // First compute the intermediate sqrt values modulo p and modulo q
+        // Pre-compute the exponents
+        // + Sanity check: since prime == 3 mod 4, the remainder should always be 0
+        let (exponent_p, remainder) =
+            (&self.primes[0] + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
         assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
-        let x_p = c.modpow(&exponent, &self.primes[0]);
-        let x_q = c.modpow(&exponent, &self.primes[1]);
-        todo!();
+        let (exponent_q, remainder) =
+            (&self.primes[1] + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
+        assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
+        let a_0 = c.modpow(&exponent_p, &self.primes[0]);
+        let a_1 = c.modpow(&exponent_q, &self.primes[1]);
+        // For the case of only two primes
+        let N_0 = self.primes[1].clone().to_bigint().unwrap();
+        let N_1 = self.primes[0].clone().to_bigint().unwrap();
+        // Solve N_k * x_k == 1
+        // gcd(p, q) == 1
+        // p * x == 1 mod q
+        // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
+        // gcd(p,q) == p*x + q*y
+        // Now for p = n_0:
+        //
+        let e = (&BigInt::from_biguint(Sign::Plus, self.primes[0].clone())).extended_gcd(&N_0);
+        // sanity check
+        assert!(e.gcd.is_one());
+        let x = &e.x;
+        let y = &e.y;
+        // sanity checks on gcd
+        assert_eq!(
+            BigInt::one(),
+            x * self.primes[0].to_bigint().unwrap() + &(y * &N_0)
+        );
+        // sanity check that p * x == 1 mod q
+        // i.e. that N_1 * x == 1 (mod n_1)
+        assert_eq!(
+            (x * &N_1).mod_floor(&self.primes[1].to_bigint().unwrap()),
+            BigInt::one()
+        );
+        // By symmetry: q * y == 1 mod p
+        assert_eq!(
+            (y * &N_0).mod_floor(&self.primes[0].to_bigint().unwrap()),
+            BigInt::one()
+        );
+        // TODO same for x_1
+        // compute the final combined x
+        let x: BigInt = (y * N_0 * &a_0.to_bigint().unwrap() + x * N_1 * &a_1.to_bigint().unwrap())
+            % self.n.to_bigint().unwrap();
+        // // TODO Sanity check:
+        // // x^2 == c mod pq
+        let x = x.abs().to_biguint().unwrap();
+        assert_eq!(c, &(x.modpow(&BigUint::from_u8(2u8).unwrap(), &self.n)));
+        Ok(x)
     }
 }
 
@@ -276,6 +349,7 @@ mod tests {
 
     use num_traits::{FromPrimitive, ToPrimitive};
     use rand::{rngs::StdRng, SeedableRng};
+    use sha2::Sha256;
 
     use std::time::SystemTime;
 
@@ -300,6 +374,21 @@ mod tests {
         // let signature = private_key.sign(&m).unwrap();
         // assert!(pub_key.verify(&m, &signature).is_err());
         // assert!(pub_key.verify(&m, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_signing() {
+        let p = BigUint::from_u8(7u8).unwrap();
+        let q = BigUint::from_u8(11u8).unwrap();
+        let n = p.clone() * q.clone();
+        let private_key = RWPrivateKey {
+            pubkey_components: RWPublicKey { n },
+            primes: vec![p, q],
+        };
+        let _signature = PrivateKey::<Sha256>::sign(
+            &private_key,
+            String::from("fast verification scheme").as_bytes(),
+        );
     }
 
     macro_rules! key_generation {
