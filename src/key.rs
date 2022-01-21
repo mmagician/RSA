@@ -292,10 +292,12 @@ impl RWPrivateKey {
         // a_0 == sqrt(c) mod p
         // a_1 == sqrt(c) mod q
         //
+        // n = p * q
+        // n_0 = p
+        // n_1 = q
         // N_0 = n / n_0 = n / p = q
         // N_1 = p
 
-        // First compute the intermediate sqrt values modulo p and modulo q
         // Pre-compute the exponents
         // + Sanity check: since prime == 3 mod 4, the remainder should always be 0
         let (exponent_p, remainder) =
@@ -304,27 +306,25 @@ impl RWPrivateKey {
         let (exponent_q, remainder) =
             (&q + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
         assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
+
+        // Compute the intermediate sqrt values modulo p and modulo q
         let a_0 = c.modpow(&exponent_p, &p);
         let a_1 = c.modpow(&exponent_q, &q);
-        // Solve N_k * x_k == 1
-        // gcd(p, q) == 1
-        // p * x == 1 mod q
+
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
-        // gcd(p,q) == p*x + q*y
-        // Now for p = n_0:
-        //
+        // 1 == gcd(p,q) == p*x + q*y
         let e =
             (&BigInt::from_biguint(Sign::Plus, p.clone())).extended_gcd(&q.to_bigint().unwrap());
-        // sanity check
-        assert!(e.gcd.is_one());
+
         let x = &e.x;
         let y = &e.y;
-        // sanity checks on gcd
+        // Some sanity checks
+        assert!(e.gcd.is_one());
         assert_eq!(
             BigInt::one(),
             x * p.to_bigint().unwrap() + &(y * &q.to_bigint().unwrap())
         );
-        // sanity check that p * x == 1 mod q
+        // Check that p * x == 1 mod q
         // i.e. that N_1 * x == 1 (mod n_1)
         assert_eq!(
             (x * &p.to_bigint().unwrap()).mod_floor(&q.to_bigint().unwrap()),
@@ -335,15 +335,16 @@ impl RWPrivateKey {
             (y * &q.to_bigint().unwrap()).mod_floor(&p.to_bigint().unwrap()),
             BigInt::one()
         );
-        // TODO same for x_1
-        // compute the final combined x
+        // Compute the final combined x
         let x: BigInt = (y * q.to_bigint().unwrap() * &a_0.to_bigint().unwrap()
             + x * p.to_bigint().unwrap() * &a_1.to_bigint().unwrap())
             % self.n.to_bigint().unwrap();
-        // // TODO Sanity check:
-        // // x^2 == c mod pq
+
+        // TODO: decide which sqrt we're taking: +/-. For now assume BigUint
         let x = x.abs().to_biguint().unwrap();
+        // Final correctness check: x^2 == c mod n
         assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
+
         Ok(x)
     }
 }
