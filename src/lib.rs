@@ -25,4 +25,16 @@ pub mod errors;
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
 #[cfg(feature = "alloc")]
-pub use self::key::{PublicKey, PublicKeyParts, RWPrivateKey, RWPublicKey};
+pub use self::key::{PrivateKey, PublicKey, PublicKeyParts, RWPrivateKey, RWPublicKey};
+
+#[cfg(doctest)]
+mod test_readme {
+    macro_rules! external_doc_test {
+        ($x:expr) => {
+            #[doc = $x]
+            extern "C" {}
+        };
+    }
+
+    external_doc_test!(include_str!("../README.md"));
+}

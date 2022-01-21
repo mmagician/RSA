@@ -206,8 +206,6 @@ impl RWPrivateKey {
         let p = self.primes[0].clone();
         let q = self.primes[1].clone();
 
-        assert!(p < q);
-
         // first, checking that Legendre == 1
         let legendre_p: BigUint = c.modpow(
             &((&p - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),

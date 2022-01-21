@@ -14,22 +14,25 @@ A portable RSA implementation in pure Rust.
 ## Example
 
 ```rust
-use rsa::{PublicKey, RWPrivateKey, RsaPublicKey, PaddingScheme};
+use rsa::{PublicKey, RWPrivateKey, PrivateKey};
+use sha2::Sha256;
 use rand::rngs::OsRng;
 
 let mut rng = OsRng;
 let bits = 2048;
-let priv_key = RWPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-let pub_key = RsaPublicKey::from(&priv_key);
+let private_key = RWPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
+let public_key = private_key.to_public_key();
 
-// Encrypt
-let data = b"hello world";
-let enc_data = pub_key.encrypt(&mut rng, PaddingScheme::new_pkcs1v15_encrypt(), &data[..]).expect("failed to encrypt");
-assert_ne!(&data[..], &enc_data[..]);
+// Signature
+let message = String::from("fast verification scheme");
+let signature = PrivateKey::<Sha256>::sign(&private_key, message.as_bytes());
 
-// Decrypt
-let dec_data = priv_key.decrypt(PaddingScheme::new_pkcs1v15_encrypt(), &enc_data).expect("failed to decrypt");
-assert_eq!(&data[..], &dec_data[..]);
+// Verification
+assert!(PublicKey::<Sha256>::verify(
+    &public_key,
+    message.as_bytes(),
+    signature.unwrap()
+));
 ```
 
 > **Note:** If you encounter unusually slow key generation time while using `RWPrivateKey::new` you can try to compile in release mode or add the following to your `Cargo.toml`. Key generation is much faster when building with higher optimization levels, but this will increase the compile time a bit.
