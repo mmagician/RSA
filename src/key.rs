@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
-use digest::{Digest, DynDigest, FixedOutputReset};
+use digest::{Digest, FixedOutput, FixedOutputReset};
 
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use num_integer::Integer;
@@ -8,7 +8,7 @@ use num_traits::{FromPrimitive, One, Signed};
 use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
-
+//
 use zeroize::Zeroize;
 
 use crate::algorithms::generate_multi_prime_key_with_exp;
@@ -19,6 +19,10 @@ const RANDOMIZER_BYTES: usize = 1;
 const EXP: u8 = 2;
 type DigestResult = Vec<u8>;
 type Randomiser = [u8; RANDOMIZER_BYTES];
+pub struct Signature {
+    s: DigestResult,
+    u: Randomiser,
+}
 
 pub trait PublicKeyParts {
     /// Returns the modulus of the key.
@@ -32,7 +36,7 @@ pub trait PublicKeyParts {
 }
 
 pub trait PrivateKey<H: Digest + FixedOutputReset>: PublicKeyParts {
-    fn sign(&self, message: &[u8]) -> Result<(DigestResult, Randomiser)>;
+    fn sign(&self, message: &[u8]) -> Result<Signature>;
 }
 
 /// Represents the public part of an RSA key.
@@ -106,12 +110,12 @@ impl From<&RWPrivateKey> for RWPublicKey {
 }
 
 /// Generic trait for operations on a public key.
-pub trait PublicKey<H: Default + DynDigest + Clone>: PublicKeyParts {
+pub trait PublicKey<H: Digest + FixedOutput>: PublicKeyParts {
     /// Verify a signed message.
     /// `hashed`must be the result of hashing the input using the hashing function
     /// passed in through `hash`.
     /// If the message is valid `Ok(())` is returned, otherwiese an `Err` indicating failure.
-    fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()>;
+    fn verify(&self, hashed: &[u8], sig: Signature) -> bool;
 }
 
 impl PublicKeyParts for RWPublicKey {
@@ -120,9 +124,15 @@ impl PublicKeyParts for RWPublicKey {
     }
 }
 
-impl<H: Default + DynDigest + Clone> PublicKey<H> for RWPublicKey {
-    fn verify(&self, _hashed: &[u8], _sig: &[u8]) -> Result<()> {
-        todo!()
+impl<H: Digest + FixedOutput> PublicKey<H> for RWPublicKey {
+    fn verify(&self, message: &[u8], signature: Signature) -> bool {
+        let mut hasher = H::new();
+        Digest::update(&mut hasher, message);
+        Digest::update(&mut hasher, signature.u);
+        // if the same hash function is used, then the digest `c` should match whatever the signer produced
+        let c = BigUint::from_bytes_le(&hasher.finalize()).mod_floor(&self.n);
+        let x = BigUint::from_bytes_le(&signature.s);
+        c == x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)
     }
 }
 
@@ -155,7 +165,7 @@ impl PublicKeyParts for RWPrivateKey {
 }
 
 impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
-    fn sign(&self, message: &[u8]) -> Result<(DigestResult, Randomiser)> {
+    fn sign(&self, message: &[u8]) -> Result<Signature> {
         let mut rng = thread_rng();
         let mut digest;
         let mut hasher = H::new();
@@ -181,7 +191,10 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
                 _ => continue,
             }
         }
-        Ok((s.to_bytes_le(), u))
+        Ok(Signature {
+            s: s.to_bytes_le(),
+            u,
+        })
     }
 }
 
@@ -384,6 +397,7 @@ mod tests {
 
     #[test]
     fn test_signing() {
+        // Alice computes her private key
         let p = BigUint::from_u8(7u8).unwrap();
         let q = BigUint::from_u8(11u8).unwrap();
         let n = p.clone() * q.clone();
@@ -391,10 +405,16 @@ mod tests {
             pubkey_components: RWPublicKey { n },
             primes: vec![p, q],
         };
-        let _signature = PrivateKey::<Sha256>::sign(
-            &private_key,
-            String::from("fast verification scheme").as_bytes(),
-        );
+        // And a public key for Bob
+        let public_key: RWPublicKey = private_key.to_public_key();
+        // Sign the message
+        let message = String::from("fast verification scheme");
+        let signature = PrivateKey::<Sha256>::sign(&private_key, message.as_bytes());
+        assert!(PublicKey::<Sha256>::verify(
+            &public_key,
+            message.as_bytes(),
+            signature.unwrap()
+        ));
     }
 
     macro_rules! key_generation {
