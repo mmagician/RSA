@@ -8,8 +8,6 @@ use num_traits::{FromPrimitive, One, Signed};
 use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
-//
-use zeroize::Zeroize;
 
 use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
@@ -64,48 +62,10 @@ pub struct RWPrivateKey {
     pub(crate) primes: Vec<BigUint>,
 }
 
-impl PartialEq for RWPrivateKey {
-    #[inline]
-    fn eq(&self, other: &RWPrivateKey) -> bool {
-        self.pubkey_components == other.pubkey_components && self.primes == other.primes
-    }
-}
-
-impl Eq for RWPrivateKey {}
-
-impl Zeroize for RWPrivateKey {
-    fn zeroize(&mut self) {
-        for prime in self.primes.iter_mut() {
-            prime.zeroize();
-        }
-        self.primes.clear();
-    }
-}
-
-impl Drop for RWPrivateKey {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
 impl Deref for RWPrivateKey {
     type Target = RWPublicKey;
     fn deref(&self) -> &RWPublicKey {
         &self.pubkey_components
-    }
-}
-
-impl From<RWPrivateKey> for RWPublicKey {
-    fn from(private_key: RWPrivateKey) -> Self {
-        (&private_key).into()
-    }
-}
-
-impl From<&RWPrivateKey> for RWPublicKey {
-    fn from(private_key: &RWPrivateKey) -> Self {
-        let n = private_key.n.clone();
-
-        RWPublicKey { n }
     }
 }
 
@@ -144,19 +104,6 @@ impl RWPublicKey {
         Ok(k)
     }
 }
-
-impl<'a> PublicKeyParts for &'a RWPublicKey {
-    /// Returns the modulus of the key.
-    fn n(&self) -> &BigUint {
-        &self.n
-    }
-}
-
-// impl<'a> PublicKey for &'a RWPublicKey {
-//     fn verify(&self, hashed: &[u8], sig: &[u8]) -> Result<()> {
-//         (*self).verify(hashed, sig)
-//     }
-// }
 
 impl PublicKeyParts for RWPrivateKey {
     fn n(&self) -> &BigUint {
@@ -197,18 +144,6 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
         })
     }
 }
-
-impl<'a> PublicKeyParts for &'a RWPrivateKey {
-    fn n(&self) -> &BigUint {
-        &self.n
-    }
-}
-
-// impl<'a> PrivateKey for &'a RWPrivateKey {
-//     fn sign(&self, digest_in: &[u8]) -> Result<Vec<u8>> {
-//         (*self).sign(digest_in)
-//     }
-// }
 
 impl RWPrivateKey {
     /// Generate a new Rsa key pair of the given bit size using the passed in `rng`.
@@ -380,7 +315,7 @@ mod tests {
             },
             primes: vec![],
         };
-        let public_key: RWPublicKey = private_key.into();
+        let public_key: RWPublicKey = private_key.to_public_key();
 
         assert_eq!(public_key.n().to_u64(), Some(100));
     }
@@ -388,7 +323,7 @@ mod tests {
     fn test_key_basics(private_key: &RWPrivateKey) {
         private_key.validate().expect("invalid private key");
 
-        let _pub_key: RWPublicKey = private_key.clone().into();
+        let _pub_key: RWPublicKey = private_key.to_public_key();
         let _m = vec![42];
         // let signature = private_key.sign(&m).unwrap();
         // assert!(pub_key.verify(&m, &signature).is_err());
