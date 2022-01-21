@@ -1,15 +1,15 @@
-# RSA
+# Rabin-Williams signatures
 
-[![crates.io][crate-image]][crate-link]
+<!-- [![crates.io][crate-image]][crate-link]
 [![Documentation][doc-image]][doc-link]
 [![Build Status][build-image]][build-link]
 ![minimum rustc 1.56][msrv-image]
 [![Project Chat][chat-image]][chat-link]
-[![dependency status][deps-image]][deps-link]
+[![dependency status][deps-image]][deps-link] -->
 
-A portable RSA implementation in pure Rust.
+A portable Rabin-Williams signature scheme implementation in pure Rust.
 
-⚠️ **WARNING:** This crate has been audited by a 3rd party, but a full blog post with the results and the updates made since the audit has not been officially released yet. See [#60](https://github.com/RustCrypto/RSA/issues/60) for more information.
+⚠️ **WARNING:** This crate has NOT been audited by a 3rd party and is a work-in-progress. Use at your own risk.
 
 ## Example
 
@@ -34,7 +34,7 @@ assert!(PublicKey::<Sha256>::verify(
     signature.unwrap()
 ));
 ```
-
+<!-- 
 > **Note:** If you encounter unusually slow key generation time while using `RWPrivateKey::new` you can try to compile in release mode or add the following to your `Cargo.toml`. Key generation is much faster when building with higher optimization levels, but this will increase the compile time a bit.
 > ```toml
 > [profile.debug]
@@ -46,7 +46,7 @@ assert!(PublicKey::<Sha256>::verify(
 > ```toml
 > [profile.dev.package.num-bigint-dig]
 > opt-level = 3
-> ```
+> ``` -->
 
 ## Status
 
@@ -55,22 +55,19 @@ Currently at Phase 1 (v) 🚧
 There will be three phases before `1.0` 🚢 can be released.
 
 1. 🚧  Make it work
-    - [x] Prime generation ✅
+    - [x] Prime generation: Rabin ✅
+    - [ ] Prime generation: Rabin-Williams scheme ✅
     - [x] Key generation ✅
-    - [x] PKCS1v1.5: Encryption & Decryption ✅
-    - [x] PKCS1v1.5: Sign & Verify ✅
-    - [ ] PKCS1v1.5 (session key): Encryption & Decryption
-    - [x] OAEP: Encryption & Decryption
-    - [x] PSS: Sign & Verify
-    - [x] Key import & export
+    - [x] Rabin: Sign & Verify
+    - [ ] Rabin-Williams: Sign & Verify
+    - [ ] Key import & export
 2. 🚀 Make it fast
-    - [x] Benchmarks ✅
+    - [ ] Benchmarks ✅
     - [ ] compare to other implementations 🚧
     - [ ] optimize 🚧
 3. 🔐 Make it secure
     - [ ] Fuzz testing
     - [ ] Security Audits
-
 
 ## Minimum Supported Rust Version (MSRV)
 
@@ -93,7 +90,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-[//]: # (badges)
+<!-- [//]: # (badges)
 
 [crate-image]: https://img.shields.io/crates/v/rsa.svg
 [crate-link]: https://crates.io/crates/rsa
@@ -105,4 +102,4 @@ dual licensed as above, without any additional terms or conditions.
 [chat-image]: https://img.shields.io/badge/zulip-join_chat-blue.svg
 [chat-link]: https://rustcrypto.zulipchat.com/#narrow/stream/260047-RSA
 [deps-image]: https://deps.rs/repo/github/RustCrypto/RSA/status.svg
-[deps-link]: https://deps.rs/repo/github/RustCrypto/RSA
+[deps-link]: https://deps.rs/repo/github/RustCrypto/RSA -->
