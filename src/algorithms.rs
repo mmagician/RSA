@@ -8,8 +8,6 @@ use num_traits::Float;
 use num_traits::{FromPrimitive, One, Zero};
 use rand::Rng;
 
-/// Default exponent for RSA keys.
-const EXP: u64 = 2;
 const N_PRIMES: usize = 2;
 
 /// Generates a multi-prime RSA keypair of the given bit size, public exponent,

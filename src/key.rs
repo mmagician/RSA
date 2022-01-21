@@ -1,20 +1,22 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
-use digest::{Digest, DynDigest, FixedOutput, FixedOutputReset, Reset, Update};
-use num_bigint::algorithms::extended_gcd;
-use num_bigint::{BigInt, BigUint, RandBigInt, Sign, ToBigInt};
+use digest::{Digest, DynDigest, FixedOutputReset};
+
+use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed};
 use rand::{thread_rng, Rng};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
-use std::ops::Div;
+
 use zeroize::Zeroize;
 
 use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
 
 const RANDOMIZER_BYTES: usize = 1;
+/// Default exponent for RSA keys.
+const EXP: u8 = 2;
 type DigestResult = Vec<u8>;
 type Randomiser = [u8; RANDOMIZER_BYTES];
 
@@ -171,7 +173,6 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
             // return the sqrt
             // Otherwise, try another u
             let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
-            // let c = BigUint::from_u8(10).unwrap();
             match self.sqrt_mod_n(&c) {
                 Ok(sqrt) => {
                     s = sqrt;
@@ -253,15 +254,20 @@ impl RWPrivateKey {
     /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
     /// Finally, combine the two using Chinese Remainder Theorem.
     fn sqrt_mod_n(&self, c: &BigUint) -> Result<BigUint> {
-        assert!(&self.primes[0] < &self.primes[1]);
+        // For the case of only two primes
+        let p = self.primes[0].clone();
+        let q = self.primes[1].clone();
+
+        assert!(p < q);
+
         // first, checking that Legendre == 1
         let legendre_p: BigUint = c.modpow(
-            &((&self.primes[0] - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
-            &self.primes[0],
+            &((&p - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &p,
         );
         let legendre_q: BigUint = c.modpow(
-            &((&self.primes[1] - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
-            &self.primes[1],
+            &((&q - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &q,
         );
         if legendre_p != BigUint::one() || legendre_q != BigUint::one() {
             return Err(Error::QuadraticResidueNotFound);
@@ -293,16 +299,13 @@ impl RWPrivateKey {
         // Pre-compute the exponents
         // + Sanity check: since prime == 3 mod 4, the remainder should always be 0
         let (exponent_p, remainder) =
-            (&self.primes[0] + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
+            (&p + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
         assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
         let (exponent_q, remainder) =
-            (&self.primes[1] + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
+            (&q + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
         assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
-        let a_0 = c.modpow(&exponent_p, &self.primes[0]);
-        let a_1 = c.modpow(&exponent_q, &self.primes[1]);
-        // For the case of only two primes
-        let N_0 = self.primes[1].clone().to_bigint().unwrap();
-        let N_1 = self.primes[0].clone().to_bigint().unwrap();
+        let a_0 = c.modpow(&exponent_p, &p);
+        let a_1 = c.modpow(&exponent_q, &q);
         // Solve N_k * x_k == 1
         // gcd(p, q) == 1
         // p * x == 1 mod q
@@ -310,7 +313,8 @@ impl RWPrivateKey {
         // gcd(p,q) == p*x + q*y
         // Now for p = n_0:
         //
-        let e = (&BigInt::from_biguint(Sign::Plus, self.primes[0].clone())).extended_gcd(&N_0);
+        let e =
+            (&BigInt::from_biguint(Sign::Plus, p.clone())).extended_gcd(&q.to_bigint().unwrap());
         // sanity check
         assert!(e.gcd.is_one());
         let x = &e.x;
@@ -318,27 +322,28 @@ impl RWPrivateKey {
         // sanity checks on gcd
         assert_eq!(
             BigInt::one(),
-            x * self.primes[0].to_bigint().unwrap() + &(y * &N_0)
+            x * p.to_bigint().unwrap() + &(y * &q.to_bigint().unwrap())
         );
         // sanity check that p * x == 1 mod q
         // i.e. that N_1 * x == 1 (mod n_1)
         assert_eq!(
-            (x * &N_1).mod_floor(&self.primes[1].to_bigint().unwrap()),
+            (x * &p.to_bigint().unwrap()).mod_floor(&q.to_bigint().unwrap()),
             BigInt::one()
         );
         // By symmetry: q * y == 1 mod p
         assert_eq!(
-            (y * &N_0).mod_floor(&self.primes[0].to_bigint().unwrap()),
+            (y * &q.to_bigint().unwrap()).mod_floor(&p.to_bigint().unwrap()),
             BigInt::one()
         );
         // TODO same for x_1
         // compute the final combined x
-        let x: BigInt = (y * N_0 * &a_0.to_bigint().unwrap() + x * N_1 * &a_1.to_bigint().unwrap())
+        let x: BigInt = (y * q.to_bigint().unwrap() * &a_0.to_bigint().unwrap()
+            + x * p.to_bigint().unwrap() * &a_1.to_bigint().unwrap())
             % self.n.to_bigint().unwrap();
         // // TODO Sanity check:
         // // x^2 == c mod pq
         let x = x.abs().to_biguint().unwrap();
-        assert_eq!(c, &(x.modpow(&BigUint::from_u8(2u8).unwrap(), &self.n)));
+        assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
         Ok(x)
     }
 }
@@ -369,8 +374,8 @@ mod tests {
     fn test_key_basics(private_key: &RWPrivateKey) {
         private_key.validate().expect("invalid private key");
 
-        let pub_key: RWPublicKey = private_key.clone().into();
-        let m = vec![42];
+        let _pub_key: RWPublicKey = private_key.clone().into();
+        let _m = vec![42];
         // let signature = private_key.sign(&m).unwrap();
         // assert!(pub_key.verify(&m, &signature).is_err());
         // assert!(pub_key.verify(&m, &signature).is_ok());
