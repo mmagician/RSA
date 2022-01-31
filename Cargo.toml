@@ -1,12 +1,12 @@
 [package]
 name = "rsa"
-version = "0.5.0"
-authors = ["RustCrypto Developers", "dignifiedquire <dignifiedquire@gmail.com>"]
-edition = "2018"
-description = "Pure Rust RSA implementation"
+version = "0.0.1"
+authors = ["Marcin Górny", "mmagician <marcin.gorny.94@protonmail.com>"]
+edition = "2021"
+description = "Pure Rust Rabin-Williams implementation"
 license = "MIT OR Apache-2.0"
-documentation = "https://docs.rs/rsa"
-repository = "https://github.com/RustCrypto/RSA"
+# documentation = "https://docs.rs/rabin-willams"
+repository = "https://github.com/mmagician/Rabin-Williams"
 keywords = ["rsa", "encryption", "security", "crypto"]
 categories = ["cryptography"]
 readme = "README.md"
