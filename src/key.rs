@@ -37,6 +37,14 @@ pub trait PrivateKey<H: Digest + FixedOutputReset>: PublicKeyParts {
     fn sign(&self, message: &[u8]) -> Result<Signature>;
 }
 
+/// Generic trait for operations on a public key.
+pub trait PublicKey<H: Digest + FixedOutput>: PublicKeyParts {
+    /// Verify a signed message.
+    /// `message` must be the original, unhashed message.
+    /// If the message is valid, `Ok(())` is returned, otherwiese an `Err` indicating failure.
+    fn verify(&self, message: &[u8], sig: Signature) -> bool;
+}
+
 /// Represents the public part of an RSA key.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
@@ -67,15 +75,6 @@ impl Deref for RWPrivateKey {
     fn deref(&self) -> &RWPublicKey {
         &self.pubkey_components
     }
-}
-
-/// Generic trait for operations on a public key.
-pub trait PublicKey<H: Digest + FixedOutput>: PublicKeyParts {
-    /// Verify a signed message.
-    /// `hashed`must be the result of hashing the input using the hashing function
-    /// passed in through `hash`.
-    /// If the message is valid `Ok(())` is returned, otherwiese an `Err` indicating failure.
-    fn verify(&self, hashed: &[u8], sig: Signature) -> bool;
 }
 
 impl PublicKeyParts for RWPublicKey {
