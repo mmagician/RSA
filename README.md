@@ -14,13 +14,13 @@ A portable Rabin-Williams signature scheme implementation in pure Rust.
 ## Example
 
 ```rust
-use rsa::{VerifyRabin, PrivateKey, SignRabin};
+use rsa::{VerifyRabin, PrivateKey, SignRabin, KeyType, generate_multi_prime_key_with_exp};
 use sha2::Sha256;
 use rand::rngs::OsRng;
 
 let mut rng = OsRng;
 let bits = 1024;
-let private_key = PrivateKey::new(&mut rng, bits).expect("failed to generate a key");
+let private_key = generate_multi_prime_key_with_exp(&mut rng, bits, KeyType::Rabin).expect("failed to generate a key");
 let public_key = private_key.to_public_key();
 
 // Signature

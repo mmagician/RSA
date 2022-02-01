@@ -16,6 +16,8 @@ pub use num_bigint::BigUint;
 /// Useful algorithms.
 #[cfg(feature = "alloc")]
 pub mod algorithms;
+pub use algorithms::generate_multi_prime_key_with_exp;
+pub use algorithms::KeyType;
 
 /// Error types.
 #[cfg(feature = "alloc")]

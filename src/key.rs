@@ -4,11 +4,9 @@ use core::ops::Deref;
 use num_bigint::{BigInt, BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed};
-use rand::Rng;
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 
-use crate::algorithms::generate_multi_prime_key_with_exp;
 use crate::errors::{Error, Result};
 
 /// Default exponent for RSA keys.
@@ -53,11 +51,6 @@ impl PublicKey {
 }
 
 impl PrivateKey {
-    /// Generate a new Rsa key pair of the given bit size using the passed in `rng`.
-    pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<PrivateKey> {
-        generate_multi_prime_key_with_exp(rng, bit_size)
-    }
-
     /// Constructs an RSA key pair from the individual components.
     pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> PrivateKey {
         PrivateKey {

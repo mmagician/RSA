@@ -5,10 +5,14 @@ use crate::key::PrivateKey;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;
-use num_traits::{FromPrimitive, One, Zero};
+use num_traits::{One, Zero};
 use rand::Rng;
 
 const N_PRIMES: usize = 2;
+
+pub enum KeyType {
+    Rabin,
+}
 
 /// Generates a multi-prime RSA keypair of the given bit size, public exponent,
 /// and the given random source, as suggested in [1]. Although the public
@@ -24,6 +28,7 @@ const N_PRIMES: usize = 2;
 pub fn generate_multi_prime_key_with_exp<R: Rng>(
     rng: &mut R,
     bit_size: usize,
+    key_type: KeyType,
 ) -> Result<PrivateKey> {
     if bit_size < 64 {
         let prime_limit = (1u64 << (bit_size / N_PRIMES) as u64) as f64;
@@ -42,6 +47,8 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
     }
     let mut primes = vec![BigUint::zero(); N_PRIMES as usize];
     let n_final: BigUint;
+    let three: BigUint = BigUint::new(vec![3]);
+    let four: BigUint = BigUint::new(vec![4]);
 
     'next: loop {
         let mut todo = bit_size;
@@ -58,14 +65,15 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         // will give good results.
 
         // for efficient sqrt calculations, we need both primes 3 mod 4
-        let four: BigUint = BigUint::from_u64(4).unwrap();
         for (i, prime) in primes.iter_mut().enumerate() {
             let mut tmp;
-            loop {
-                tmp = rng.gen_prime(todo / (N_PRIMES - i));
-                if &tmp % &four == BigUint::from_u64(3).unwrap() {
-                    break;
-                }
+            match key_type {
+                KeyType::Rabin => loop {
+                    tmp = rng.gen_prime(todo / (N_PRIMES - i));
+                    if &tmp % &four == three {
+                        break;
+                    }
+                },
             }
             *prime = tmp;
             todo -= prime.bits();

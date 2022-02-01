@@ -100,6 +100,7 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha2::Sha256;
 
+    use crate::algorithms::KeyType;
     use std::time::SystemTime;
 
     #[test]
@@ -120,9 +121,6 @@ mod tests {
 
         let _pub_key: PublicKey = private_key.to_public_key();
         let _m = vec![42];
-        // let signature = private_key.sign(&m).unwrap();
-        // assert!(pub_key.verify(&m, &signature).is_err());
-        // assert!(pub_key.verify(&m, &signature).is_ok());
     }
 
     #[test]
@@ -157,7 +155,8 @@ mod tests {
                 let mut rng = StdRng::seed_from_u64(seed.as_secs());
 
                 for _ in 0..10 {
-                    let private_key = generate_multi_prime_key_with_exp(&mut rng, $size).unwrap();
+                    let private_key =
+                        generate_multi_prime_key_with_exp(&mut rng, $size, KeyType::Rabin).unwrap();
                     assert_eq!(private_key.n.bits(), $size);
 
                     test_key_basics(&private_key);
@@ -185,9 +184,9 @@ mod tests {
             .unwrap();
         let mut rng = StdRng::seed_from_u64(seed.as_secs());
         for i in 0..12 {
-            assert!(PrivateKey::new(&mut rng, i).is_err());
+            assert!(generate_multi_prime_key_with_exp(&mut rng, i, KeyType::Rabin).is_err());
         }
-        assert!(PrivateKey::new(&mut rng, 13).is_ok());
+        assert!(generate_multi_prime_key_with_exp(&mut rng, 13, KeyType::Rabin).is_ok());
     }
 
     #[test]
