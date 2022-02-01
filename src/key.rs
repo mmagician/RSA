@@ -137,6 +137,10 @@ impl PrivateKey {
             return Err(Error::QuadraticResidueNotFound);
         }
 
+        Ok(self.combine_sqrt(c, p, q, 1, 1))
+    }
+
+    fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint, e: i8, f: u8) -> BigUint {
         // Now use Chinese Remainder Theorem to compute x mod n
         // Generalised CRT is stated as:
         // x == a_0 mod (n_0)
@@ -209,6 +213,6 @@ impl PrivateKey {
         // Final correctness check: x^2 == c mod n
         assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
 
-        Ok(x)
+        x
     }
 }
