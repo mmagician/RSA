@@ -11,7 +11,13 @@ use rand::Rng;
 const N_PRIMES: usize = 2;
 
 pub enum KeyType {
+    // Rabin signatures only require 3 mod 4 for both primes,
+    // thus being easier to find.
     Rabin,
+    // Williams signature requires one prime to be 3 mod 8
+    // and the other 7 mod 8. Each RabinWilliams prime pair
+    // will also be a Rabin pair.
+    RabinWilliams,
 }
 
 /// Generates a multi-prime RSA keypair of the given bit size, public exponent,
@@ -49,6 +55,8 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
     let n_final: BigUint;
     let three: BigUint = BigUint::new(vec![3]);
     let four: BigUint = BigUint::new(vec![4]);
+    let seven: BigUint = BigUint::new(vec![7]);
+    let eight: BigUint = BigUint::new(vec![8]);
 
     'next: loop {
         let mut todo = bit_size;
@@ -63,15 +71,29 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         // shift todo to compensate for lost bits: the mean value of 0.11...
         // is 7/8, so todo + shift - nprimes * log2(7/8) ~= bits - 1/2
         // will give good results.
-
-        // for efficient sqrt calculations, we need both primes 3 mod 4
         for (i, prime) in primes.iter_mut().enumerate() {
             let mut tmp;
             match key_type {
                 KeyType::Rabin => loop {
                     tmp = rng.gen_prime(todo / (N_PRIMES - i));
+                    // for efficient sqrt calculations, we need both primes 3 mod 4
                     if &tmp % &four == three {
                         break;
+                    }
+                },
+                KeyType::RabinWilliams => loop {
+                    tmp = rng.gen_prime(todo / (N_PRIMES - i));
+                    // first prime should be 3 mod 8
+                    if i == 0 {
+                        if &tmp % &eight == three {
+                            break;
+                        }
+                    }
+                    // second prime should be 7 mod 8
+                    else {
+                        if &tmp % &eight == seven {
+                            break;
+                        }
                     }
                 },
             }
