@@ -90,6 +90,20 @@ impl PrivateKey {
 
         Ok(())
     }
+    fn calculate_tweak_factors(mut a: bool, b: bool) -> (i8, u8) {
+        let mut e: i8 = 1;
+        let mut f: u8 = 1;
+
+        if a ^ b {
+            f = 2;
+            a ^= true;
+        }
+        if !a {
+            e = -1
+        }
+        (e, f)
+    }
+
 
     /// Compute the sqrt of `c` mod n, where n is composite
     /// First, the quadratic residuosity test is performed by computing
