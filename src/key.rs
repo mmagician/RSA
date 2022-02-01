@@ -110,6 +110,31 @@ impl PrivateKey {
         (e, f)
     }
 
+    pub(crate) fn sqrt_mod_pq(
+        &self,
+        c: &BigUint,
+        sqrt_choice: &SquareRootChoice,
+    ) -> (BigUint, i8, u8) {
+        // For the case of only two primes
+        let p = self.primes[0].clone();
+        let q = self.primes[1].clone();
+
+        // first, checking that Legendre == 1
+        let legendre_p: BigUint = c.modpow(
+            &((&p - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &p,
+        );
+        let legendre_q: BigUint = c.modpow(
+            &((&q - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
+            &q,
+        );
+        let mut a = legendre_p == BigUint::one();
+        let b = legendre_q == BigUint::one();
+
+        let (e, f) = PrivateKey::calculate_tweak_factors(a, b);
+
+        (self.combine_sqrt(c, p, q, e, f), e, f)
+    }
 
     /// Compute the sqrt of `c` mod n, where n is composite
     /// First, the quadratic residuosity test is performed by computing
