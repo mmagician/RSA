@@ -3,7 +3,7 @@ use core::ops::Deref;
 
 use num_bigint::{BigInt, BigUint, ToBigInt};
 use num_integer::Integer;
-use num_traits::{FromPrimitive, One, Signed};
+use num_traits::{FromPrimitive, One};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 
@@ -195,9 +195,9 @@ impl PrivateKey {
         assert_eq!(remainder, BigUint::from(0u8));
 
         // Compute the intermediate sqrt values modulo p and modulo q
-        let a_0: BigInt = c.modpow(&exponent_p, &p).to_bigint().unwrap();
+        let a_0: BigInt = BigInt::from(c.modpow(&exponent_p, &p));
 
-        let a_1: BigInt = c.modpow(&exponent_q, &q).to_bigint().unwrap();
+        let a_1: BigInt = BigInt::from(c.modpow(&exponent_q, &q));
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y
@@ -223,8 +223,7 @@ impl PrivateKey {
             BigInt::one()
         );
         // Compute the final combined x
-        let x: BigInt = (y * q.to_bigint().unwrap() * &a_0
-            + x * p.to_bigint().unwrap() * &a_1.to_bigint().unwrap())
+        let x: BigInt = (y * q.to_bigint().unwrap() * &a_0 + x * p.to_bigint().unwrap() * &a_1)
             % self.n.to_bigint().unwrap();
 
         let x = x
