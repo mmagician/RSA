@@ -9,6 +9,7 @@ use rand::{thread_rng, Rng};
 use serde_crate::{Deserialize, Serialize};
 
 use crate::errors::Result;
+use crate::key::SquareRootChoice;
 use crate::*;
 
 const RANDOMIZER_BYTES: usize = 1;
@@ -21,7 +22,13 @@ pub struct Signature {
     u: Randomiser,
 }
 pub trait SignRabin<H: Digest + FixedOutputReset> {
+    // Default signing method, using Principal square roots
     fn sign(&self, message: &[u8]) -> Result<Signature>;
+    fn sign_with_sqrt_choice(
+        &self,
+        message: &[u8],
+        sqrt_choice: SquareRootChoice,
+    ) -> Result<Signature>;
     fn validate(&self) -> Result<()>;
 }
 
@@ -45,7 +52,11 @@ impl<H: Digest + FixedOutput> VerifyRabin<H> for PublicKey {
 }
 
 impl<H: Digest + FixedOutputReset> SignRabin<H> for PrivateKey {
-    fn sign(&self, message: &[u8]) -> Result<Signature> {
+    fn sign_with_sqrt_choice(
+        &self,
+        message: &[u8],
+        sqrt_choice: SquareRootChoice,
+    ) -> Result<Signature> {
         let mut rng = thread_rng();
         let mut digest;
         let mut hasher = H::new();
@@ -63,7 +74,7 @@ impl<H: Digest + FixedOutputReset> SignRabin<H> for PrivateKey {
             // return the sqrt
             // Otherwise, try another u
             let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
-            match self.sqrt_mod_n(&c) {
+            match self.sqrt_mod_n(&c, &sqrt_choice) {
                 Ok(sqrt) => {
                     s = sqrt;
                     break;
@@ -88,6 +99,10 @@ impl<H: Digest + FixedOutputReset> SignRabin<H> for PrivateKey {
         }
 
         Ok(())
+    }
+
+    fn sign(&self, message: &[u8]) -> Result<Signature> {
+        SignRabin::<H>::sign_with_sqrt_choice(self, message, SquareRootChoice::Principal)
     }
 }
 

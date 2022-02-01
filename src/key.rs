@@ -11,6 +11,12 @@ use crate::errors::{Error, Result};
 
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
+
+pub enum SquareRootChoice {
+    Principal,
+    AbsPrincipal,
+    Unstructured,
+}
 /// Represents the public part of an RSA key.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
@@ -109,7 +115,11 @@ impl PrivateKey {
     /// First, the quadratic residuosity test is performed by computing
     /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
     /// Finally, combine the two using Chinese Remainder Theorem.
-    pub(crate) fn sqrt_mod_n(&self, c: &BigUint) -> Result<BigUint> {
+    pub(crate) fn sqrt_mod_n(
+        &self,
+        c: &BigUint,
+        sqrt_choice: &SquareRootChoice,
+    ) -> Result<BigUint> {
         // For the case of only two primes
         let p = self.primes[0].clone();
         let q = self.primes[1].clone();
