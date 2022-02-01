@@ -14,7 +14,7 @@ A portable Rabin-Williams signature scheme implementation in pure Rust.
 ## Example
 
 ```rust
-use rsa::{Verify, PrivateKey, Sign};
+use rsa::{VerifyRabin, PrivateKey, SignRabin};
 use sha2::Sha256;
 use rand::rngs::OsRng;
 
@@ -25,10 +25,10 @@ let public_key = private_key.to_public_key();
 
 // Signature
 let message = String::from("fast verification scheme");
-let signature = Sign::<Sha256>::sign(&private_key, message.as_bytes());
+let signature = SignRabin::<Sha256>::sign(&private_key, message.as_bytes());
 
 // Verification
-assert!(Verify::<Sha256>::verify(
+assert!(VerifyRabin::<Sha256>::verify(
     &public_key,
     message.as_bytes(),
     signature.unwrap()
