@@ -14,7 +14,7 @@ A portable Rabin-Williams signature scheme implementation in pure Rust.
 ## Example
 
 ```rust
-use rsa::{VerifyRabin, PrivateKey, SignRabin, KeyType, generate_multi_prime_key_with_exp};
+use rabin_williams::{VerifyRabin, PrivateKey, SignRabin, KeyType, generate_multi_prime_key_with_exp};
 use sha2::Sha256;
 use rand::rngs::OsRng;
 

@@ -1,5 +1,5 @@
 [package]
-name = "rsa"
+name = "rabin-williams"
 version = "0.0.1"
 authors = ["Marcin Górny", "mmagician <marcin.gorny.94@protonmail.com>"]
 edition = "2021"
