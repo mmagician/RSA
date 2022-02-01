@@ -189,12 +189,10 @@ impl PrivateKey {
 
         // Pre-compute the exponents
         // + Sanity check: since prime == 3 mod 4, the remainder should always be 0
-        let (exponent_p, remainder) =
-            (&p + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
-        assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
-        let (exponent_q, remainder) =
-            (&q + BigUint::one()).div_mod_floor(&BigUint::from_u8(4u8).unwrap());
-        assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
+        let (exponent_p, remainder) = (&p + BigUint::one()).div_mod_floor(&BigUint::from(4u8));
+        assert_eq!(remainder, BigUint::from(0u8));
+        let (exponent_q, remainder) = (&q + BigUint::one()).div_mod_floor(&BigUint::from(4u8));
+        assert_eq!(remainder, BigUint::from(0u8));
 
         // Compute the intermediate sqrt values modulo p and modulo q
         let a_0: BigInt = c.modpow(&exponent_p, &p).to_bigint().unwrap();
@@ -234,7 +232,7 @@ impl PrivateKey {
             .to_biguint()
             .unwrap();
         // Final correctness check: x^2 == c mod n
-        assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
+        assert_eq!(c, &(x.modpow(&BigUint::from(EXP), &self.n)));
 
         x
     }

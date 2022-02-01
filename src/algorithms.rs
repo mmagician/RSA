@@ -53,10 +53,10 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
     }
     let mut primes = vec![BigUint::zero(); N_PRIMES as usize];
     let n_final: BigUint;
-    let three: BigUint = BigUint::new(vec![3]);
-    let four: BigUint = BigUint::new(vec![4]);
-    let seven: BigUint = BigUint::new(vec![7]);
-    let eight: BigUint = BigUint::new(vec![8]);
+    let three: BigUint = BigUint::from(3u8);
+    let four: BigUint = BigUint::from(4u8);
+    let seven: BigUint = BigUint::from(7u8);
+    let eight: BigUint = BigUint::from(8u8);
 
     'next: loop {
         let mut todo = bit_size;
