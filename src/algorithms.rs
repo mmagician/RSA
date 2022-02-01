@@ -1,7 +1,7 @@
 use alloc::vec;
 
 use crate::errors::{Error, Result};
-use crate::key::RWPrivateKey;
+use crate::key::PrivateKey;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;
@@ -24,7 +24,7 @@ const N_PRIMES: usize = 2;
 pub fn generate_multi_prime_key_with_exp<R: Rng>(
     rng: &mut R,
     bit_size: usize,
-) -> Result<RWPrivateKey> {
+) -> Result<PrivateKey> {
     if bit_size < 64 {
         let prime_limit = (1u64 << (bit_size / N_PRIMES) as u64) as f64;
 
@@ -91,5 +91,5 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         }
     }
 
-    Ok(RWPrivateKey::from_components(n_final, primes))
+    Ok(PrivateKey::from_components(n_final, primes))
 }

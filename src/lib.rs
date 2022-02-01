@@ -25,7 +25,7 @@ pub mod errors;
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
 #[cfg(feature = "alloc")]
-pub use self::key::{PrivateKey, PublicKey, PublicKeyParts, RWPrivateKey, RWPublicKey};
+pub use self::key::{PrivateKey, PublicKey, PublicKeyParts, Sign, Verify};
 
 #[cfg(doctest)]
 mod test_readme {

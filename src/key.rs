@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::ops::Deref;
 use digest::{Digest, FixedOutput, FixedOutputReset};
 
-use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
+use num_bigint::{BigInt, BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, Signed};
 use rand::{thread_rng, Rng};
@@ -33,12 +33,12 @@ pub trait PublicKeyParts {
     }
 }
 
-pub trait PrivateKey<H: Digest + FixedOutputReset>: PublicKeyParts {
+pub trait Sign<H: Digest + FixedOutputReset>: PublicKeyParts {
     fn sign(&self, message: &[u8]) -> Result<Signature>;
 }
 
 /// Generic trait for operations on a public key.
-pub trait PublicKey<H: Digest + FixedOutput>: PublicKeyParts {
+pub trait Verify<H: Digest + FixedOutput>: PublicKeyParts {
     /// Verify a signed message.
     /// `message` must be the original, unhashed message.
     /// If the message is valid, `Ok(())` is returned, otherwiese an `Err` indicating failure.
@@ -52,7 +52,7 @@ pub trait PublicKey<H: Digest + FixedOutput>: PublicKeyParts {
     derive(Serialize, Deserialize),
     serde(crate = "serde_crate")
 )]
-pub struct RWPublicKey {
+pub struct PublicKey {
     n: BigUint,
 }
 
@@ -63,27 +63,27 @@ pub struct RWPublicKey {
     derive(Serialize, Deserialize),
     serde(crate = "serde_crate")
 )]
-pub struct RWPrivateKey {
+pub struct PrivateKey {
     /// Public components of the private key.
-    pubkey_components: RWPublicKey,
+    pubkey_components: PublicKey,
     /// Prime factors of N, contains >= 2 elements.
     pub(crate) primes: Vec<BigUint>,
 }
 
-impl Deref for RWPrivateKey {
-    type Target = RWPublicKey;
-    fn deref(&self) -> &RWPublicKey {
+impl Deref for PrivateKey {
+    type Target = PublicKey;
+    fn deref(&self) -> &PublicKey {
         &self.pubkey_components
     }
 }
 
-impl PublicKeyParts for RWPublicKey {
+impl PublicKeyParts for PublicKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl<H: Digest + FixedOutput> PublicKey<H> for RWPublicKey {
+impl<H: Digest + FixedOutput> Verify<H> for PublicKey {
     fn verify(&self, message: &[u8], signature: Signature) -> bool {
         let mut hasher = H::new();
         Digest::update(&mut hasher, message);
@@ -95,22 +95,20 @@ impl<H: Digest + FixedOutput> PublicKey<H> for RWPublicKey {
     }
 }
 
-impl RWPublicKey {
+impl PublicKey {
     /// Create a new key from its components.
     pub fn new(n: BigUint) -> Result<Self> {
-        let k = RWPublicKey { n };
-
-        Ok(k)
+        Ok(PublicKey { n })
     }
 }
 
-impl PublicKeyParts for RWPrivateKey {
+impl PublicKeyParts for PrivateKey {
     fn n(&self) -> &BigUint {
         &self.n
     }
 }
 
-impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
+impl<H: Digest + FixedOutputReset> Sign<H> for PrivateKey {
     fn sign(&self, message: &[u8]) -> Result<Signature> {
         let mut rng = thread_rng();
         let mut digest;
@@ -144,16 +142,16 @@ impl<H: Digest + FixedOutputReset> PrivateKey<H> for RWPrivateKey {
     }
 }
 
-impl RWPrivateKey {
+impl PrivateKey {
     /// Generate a new Rsa key pair of the given bit size using the passed in `rng`.
-    pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<RWPrivateKey> {
+    pub fn new<R: Rng>(rng: &mut R, bit_size: usize) -> Result<PrivateKey> {
         generate_multi_prime_key_with_exp(rng, bit_size)
     }
 
     /// Constructs an RSA key pair from the individual components.
-    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> RWPrivateKey {
-        RWPrivateKey {
-            pubkey_components: RWPublicKey { n },
+    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> PrivateKey {
+        PrivateKey {
+            pubkey_components: PublicKey { n },
             primes,
         }
     }
@@ -162,9 +160,9 @@ impl RWPrivateKey {
     ///
     /// Generally this is not needed since `RsaPrivateKey` implements the `PublicKey` trait,
     /// but it can occationally be useful to discard the private information entirely.
-    pub fn to_public_key(&self) -> RWPublicKey {
+    pub fn to_public_key(&self) -> PublicKey {
         // Safe to unwrap since n and e are already verified.
-        RWPublicKey::new(self.n().clone()).unwrap()
+        PublicKey::new(self.n().clone()).unwrap()
     }
 
     /// Returns the prime factors.
@@ -258,8 +256,8 @@ impl RWPrivateKey {
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y
-        let e =
-            (&BigInt::from_biguint(Sign::Plus, p.clone())).extended_gcd(&q.to_bigint().unwrap());
+        let e = (&BigInt::from_biguint(num_bigint::Sign::Plus, p.clone()))
+            .extended_gcd(&q.to_bigint().unwrap());
 
         let x = &e.x;
         let y = &e.y;
@@ -306,21 +304,21 @@ mod tests {
 
     #[test]
     fn test_from_into() {
-        let private_key = RWPrivateKey {
-            pubkey_components: RWPublicKey {
+        let private_key = PrivateKey {
+            pubkey_components: PublicKey {
                 n: BigUint::from_u64(100).unwrap(),
             },
             primes: vec![],
         };
-        let public_key: RWPublicKey = private_key.to_public_key();
+        let public_key: PublicKey = private_key.to_public_key();
 
         assert_eq!(public_key.n().to_u64(), Some(100));
     }
 
-    fn test_key_basics(private_key: &RWPrivateKey) {
+    fn test_key_basics(private_key: &PrivateKey) {
         private_key.validate().expect("invalid private key");
 
-        let _pub_key: RWPublicKey = private_key.to_public_key();
+        let _pub_key: PublicKey = private_key.to_public_key();
         let _m = vec![42];
         // let signature = private_key.sign(&m).unwrap();
         // assert!(pub_key.verify(&m, &signature).is_err());
@@ -333,16 +331,17 @@ mod tests {
         let p = BigUint::from_u8(7u8).unwrap();
         let q = BigUint::from_u8(11u8).unwrap();
         let n = p.clone() * q.clone();
-        let private_key = RWPrivateKey {
-            pubkey_components: RWPublicKey { n },
+        let private_key = PrivateKey {
+            pubkey_components: PublicKey { n },
             primes: vec![p, q],
         };
         // And a public key for Bob
-        let public_key: RWPublicKey = private_key.to_public_key();
+        let public_key: PublicKey = private_key.to_public_key();
         // Sign the message
         let message = String::from("fast verification scheme");
-        let signature = PrivateKey::<Sha256>::sign(&private_key, message.as_bytes());
-        assert!(PublicKey::<Sha256>::verify(
+        let signature = Sign::<Sha256>::sign(&private_key, message.as_bytes());
+        // let signature = private_key.sign(message.as_bytes());
+        assert!(Verify::<Sha256>::verify(
             &public_key,
             message.as_bytes(),
             signature.unwrap()
@@ -369,15 +368,15 @@ mod tests {
     }
 
     key_generation!(key_generation_128, 128);
-    key_generation!(key_generation_1024, 1024);
+    // key_generation!(key_generation_1024, 1024);
 
-    key_generation!(key_generation_multi_3_256, 256);
+    // key_generation!(key_generation_multi_3_256, 256);
 
     key_generation!(key_generation_multi_4_64, 64);
 
     key_generation!(key_generation_multi_5_64, 64);
-    key_generation!(key_generation_multi_8_576, 576);
-    key_generation!(key_generation_multi_16_1024, 1024);
+    // key_generation!(key_generation_multi_8_576, 576);
+    // key_generation!(key_generation_multi_16_1024, 1024);
 
     #[test]
     fn test_impossible_keys() {
@@ -387,9 +386,9 @@ mod tests {
             .unwrap();
         let mut rng = StdRng::seed_from_u64(seed.as_secs());
         for i in 0..12 {
-            assert!(RWPrivateKey::new(&mut rng, i).is_err());
+            assert!(PrivateKey::new(&mut rng, i).is_err());
         }
-        assert!(RWPrivateKey::new(&mut rng, 13).is_ok());
+        assert!(PrivateKey::new(&mut rng, 13).is_ok());
     }
 
     #[test]
@@ -400,7 +399,7 @@ mod tests {
         use serde_test::{assert_tokens, Token};
 
         let mut rng = XorShiftRng::from_seed([1; 16]);
-        let priv_key = RWPrivateKey::new(&mut rng, 64).expect("failed to generate key");
+        let priv_key = PrivateKey::new(&mut rng, 64).expect("failed to generate key");
 
         let priv_tokens = [
             Token::Struct {
@@ -456,7 +455,7 @@ mod tests {
             Token::SeqEnd,
             Token::StructEnd,
         ];
-        assert_tokens(&RWPublicKey::from(priv_key), &priv_tokens);
+        assert_tokens(&PublicKey::from(priv_key), &priv_tokens);
     }
 
     #[test]
@@ -470,7 +469,7 @@ mod tests {
             base64::decode("CUWC+hRWOT421kwRllgVjy6FYv6jQUcgDNHeAiYZnf5HjS9iK2ki7v8G5dL/0f+Yf+NhE/4q8w4m8go51hACrVpP1p8GJDjiT09+RsOzITsHwl+ceEKoe56ZW6iDHBLlrNw5/MtcYhKpjNU9KJ2udm5J/c9iislcjgckrZG2IB8ADgXHMEByZ5DgaMl4AKZ1Gx8/q6KftTvmOT5rNTMLi76VN5KWQcDWK/DqXiOiZHM7Nr4dX4me3XeRgABJyNR8Fqxj3N1+HrYLe/zs7LOaK0++F9Ul3tLelhrhsvLxei3oCZkF9A/foD3on3luYA+1cRcxWpSY3h2J4/22+yo4+Q==").unwrap(),
         ];
 
-        RWPrivateKey::from_components(
+        PrivateKey::from_components(
             BigUint::from_bytes_be(&n),
             primes.iter().map(|p| BigUint::from_bytes_be(p)).collect(),
         );
