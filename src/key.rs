@@ -216,3 +216,16 @@ impl PrivateKey {
         x
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::PrivateKey;
+
+    #[test]
+    fn test_e_f() {
+        assert_eq!(PrivateKey::calculate_tweak_factors(true, true), (1, 1));
+        assert_eq!(PrivateKey::calculate_tweak_factors(false, false), (-1, 1));
+        assert_eq!(PrivateKey::calculate_tweak_factors(false, true), (1, 2));
+        assert_eq!(PrivateKey::calculate_tweak_factors(true, false), (-1, 2));
+    }
+}
