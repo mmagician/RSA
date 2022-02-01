@@ -86,12 +86,6 @@ impl PrivateKey {
         // Check that Πprimes == n.
         let mut m = BigUint::one();
         for prime in &self.primes {
-            // Any primes ≤ 1 will cause divide-by-zero panics later.
-            assert_eq!(
-                prime % BigUint::from_u64(4).unwrap(),
-                BigUint::from_u64(3).unwrap()
-            );
-
             if *prime < BigUint::one() {
                 return Err(Error::InvalidPrime);
             }

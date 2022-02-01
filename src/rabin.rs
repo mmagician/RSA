@@ -22,6 +22,7 @@ pub struct Signature {
 }
 pub trait SignRabin<H: Digest + FixedOutputReset> {
     fn sign(&self, message: &[u8]) -> Result<Signature>;
+    fn validate(&self) -> Result<()>;
 }
 
 pub trait VerifyRabin<H: Digest + FixedOutput> {
@@ -74,6 +75,19 @@ impl<H: Digest + FixedOutputReset> SignRabin<H> for PrivateKey {
             s: s.to_bytes_le(),
             u,
         })
+    }
+
+    fn validate(&self) -> Result<()> {
+        Self::validate(self)?;
+        for prime in &self.primes {
+            // For a Rabin scheme, we require the primes to be == 3 mod 4
+            assert_eq!(
+                prime % BigUint::from_u64(4).unwrap(),
+                BigUint::from_u64(3).unwrap()
+            );
+        }
+
+        Ok(())
     }
 }
 
