@@ -123,3 +123,30 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
 
     Ok(PrivateKey::from_components(n_final, primes))
 }
+
+pub(crate) fn calculate_tweak_factors(mut a: bool, b: bool) -> (i8, u8) {
+    let mut e: i8 = 1;
+    let mut f: u8 = 1;
+
+    if a ^ b {
+        f = 2;
+        a ^= true;
+    }
+    if !a {
+        e = -1
+    }
+    (e, f)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::algorithms::calculate_tweak_factors;
+
+    #[test]
+    fn test_e_f() {
+        assert_eq!(calculate_tweak_factors(true, true), (1, 1));
+        assert_eq!(calculate_tweak_factors(false, false), (-1, 1));
+        assert_eq!(calculate_tweak_factors(false, true), (1, 2));
+        assert_eq!(calculate_tweak_factors(true, false), (-1, 2));
+    }
+}

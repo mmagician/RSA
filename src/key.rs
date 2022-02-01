@@ -7,7 +7,10 @@ use num_traits::{FromPrimitive, One, Signed};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
 
-use crate::errors::{Error, Result};
+use crate::{
+    algorithms::calculate_tweak_factors,
+    errors::{Error, Result},
+};
 
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
@@ -96,19 +99,6 @@ impl PrivateKey {
 
         Ok(())
     }
-    fn calculate_tweak_factors(mut a: bool, b: bool) -> (i8, u8) {
-        let mut e: i8 = 1;
-        let mut f: u8 = 1;
-
-        if a ^ b {
-            f = 2;
-            a ^= true;
-        }
-        if !a {
-            e = -1
-        }
-        (e, f)
-    }
 
     pub(crate) fn sqrt_mod_pq(
         &self,
@@ -128,10 +118,10 @@ impl PrivateKey {
             &((&q - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
             &q,
         );
-        let mut a = legendre_p == BigUint::one();
+        let a = legendre_p == BigUint::one();
         let b = legendre_q == BigUint::one();
 
-        let (e, f) = PrivateKey::calculate_tweak_factors(a, b);
+        let (e, f) = calculate_tweak_factors(a, b);
 
         (self.combine_sqrt(c, p, q, e, f), e, f)
     }
@@ -239,18 +229,5 @@ impl PrivateKey {
         assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
 
         x
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::PrivateKey;
-
-    #[test]
-    fn test_e_f() {
-        assert_eq!(PrivateKey::calculate_tweak_factors(true, true), (1, 1));
-        assert_eq!(PrivateKey::calculate_tweak_factors(false, false), (-1, 1));
-        assert_eq!(PrivateKey::calculate_tweak_factors(false, true), (1, 2));
-        assert_eq!(PrivateKey::calculate_tweak_factors(true, false), (-1, 2));
     }
 }
