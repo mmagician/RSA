@@ -196,13 +196,13 @@ impl PrivateKey {
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y
-        let e = (&BigInt::from_biguint(num_bigint::Sign::Plus, p.clone()))
+        let ee = (&BigInt::from_biguint(num_bigint::Sign::Plus, p.clone()))
             .extended_gcd(&q.to_bigint().unwrap());
 
-        let x = &e.x;
-        let y = &e.y;
+        let x = &ee.x;
+        let y = &ee.y;
         // Some sanity checks
-        assert!(e.gcd.is_one());
+        assert!(ee.gcd.is_one());
         assert_eq!(
             BigInt::one(),
             x * p.to_bigint().unwrap() + &(y * &q.to_bigint().unwrap())
