@@ -27,6 +27,7 @@ pub mod errors;
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
 mod rabin;
+mod rabin_williams;
 
 #[cfg(feature = "alloc")]
 // pub use self::key::{PrivateKey, PublicKey, Sign, Verify};

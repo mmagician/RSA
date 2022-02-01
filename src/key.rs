@@ -123,7 +123,13 @@ impl PrivateKey {
 
         let (e, f) = calculate_tweak_factors(a, b);
 
-        (self.combine_sqrt(c, p, q, e, f), e, f)
+        // Calculate e*f*H(m), which should be a square mod n
+        let h: BigUint = (c.to_bigint().unwrap() * e * f)
+            .mod_floor(&self.n.to_bigint().unwrap())
+            .to_biguint()
+            .unwrap();
+
+        (self.combine_sqrt(&h, p, q), e, f)
     }
 
     /// Compute the sqrt of `c` mod n, where n is composite
@@ -152,10 +158,10 @@ impl PrivateKey {
             return Err(Error::QuadraticResidueNotFound);
         }
 
-        Ok(self.combine_sqrt(c, p, q, 1, 1))
+        Ok(self.combine_sqrt(c, p, q))
     }
 
-    fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint, e: i8, f: u8) -> BigUint {
+    fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint) -> BigUint {
         // Now use Chinese Remainder Theorem to compute x mod n
         // Generalised CRT is stated as:
         // x == a_0 mod (n_0)
@@ -191,13 +197,13 @@ impl PrivateKey {
         assert_eq!(remainder, BigUint::from_u8(0u8).unwrap());
 
         // Compute the intermediate sqrt values modulo p and modulo q
-        let a_0 = c.modpow(&exponent_p, &p);
-        let a_1 = c.modpow(&exponent_q, &q);
+        let a_0: BigInt = c.modpow(&exponent_p, &p).to_bigint().unwrap();
+
+        let a_1: BigInt = c.modpow(&exponent_q, &q).to_bigint().unwrap();
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y
-        let ee = (&BigInt::from_biguint(num_bigint::Sign::Plus, p.clone()))
-            .extended_gcd(&q.to_bigint().unwrap());
+        let ee = p.to_bigint().unwrap().extended_gcd(&q.to_bigint().unwrap());
 
         let x = &ee.x;
         let y = &ee.y;
@@ -219,12 +225,14 @@ impl PrivateKey {
             BigInt::one()
         );
         // Compute the final combined x
-        let x: BigInt = (y * q.to_bigint().unwrap() * &a_0.to_bigint().unwrap()
+        let x: BigInt = (y * q.to_bigint().unwrap() * &a_0
             + x * p.to_bigint().unwrap() * &a_1.to_bigint().unwrap())
             % self.n.to_bigint().unwrap();
 
-        // TODO: decide which sqrt we're taking: +/-. For now assume BigUint
-        let x = x.abs().to_biguint().unwrap();
+        let x = x
+            .mod_floor(&self.n.to_bigint().unwrap())
+            .to_biguint()
+            .unwrap();
         // Final correctness check: x^2 == c mod n
         assert_eq!(c, &(x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)));
 
