@@ -10,7 +10,7 @@ use serde_crate::{Deserialize, Serialize};
 use crate::errors::Result;
 use crate::*;
 
-/// Default exponent for RSA keys.
+/// Default exponent for Rabin-Williams keys.
 const EXP: u8 = 2;
 type DigestResult = Vec<u8>;
 pub struct RWSignature {

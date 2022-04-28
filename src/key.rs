@@ -55,7 +55,7 @@ impl PublicKey {
 }
 
 impl PrivateKey {
-    /// Constructs an RSA key pair from the individual components.
+    /// Constructs a key pair from the individual components.
     pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> PrivateKey {
         PrivateKey {
             pubkey_components: PublicKey { n },
@@ -63,12 +63,12 @@ impl PrivateKey {
         }
     }
 
-    /// Get the public key from the private key, cloning `n` and `e`.
+    /// Get the public key from the private key, cloning `n`.
     ///
-    /// Generally this is not needed since `RsaPrivateKey` implements the `PublicKey` trait,
+    /// Generally this is not needed since `PrivateKey` implements the `PublicKey` trait,
     /// but it can occationally be useful to discard the private information entirely.
     pub fn to_public_key(&self) -> PublicKey {
-        // Safe to unwrap since n and e are already verified.
+        // Safe to unwrap since n is already verified.
         self.pubkey_components.clone()
     }
 
