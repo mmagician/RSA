@@ -1,7 +1,7 @@
 use alloc::vec;
 
 use crate::errors::{Error, Result};
-use crate::key::PrivateKey;
+use crate::key::{HmacSecret, PrivateKey};
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;
@@ -10,21 +10,14 @@ use rand::Rng;
 
 const N_PRIMES: usize = 2;
 
-/// Generates a multi-prime RSA keypair of the given bit size, public exponent,
-/// and the given random source, as suggested in [1]. Although the public
-/// keys are compatible (actually, indistinguishable) from the 2-prime case,
-/// the private keys are not. Thus it may not be possible to export multi-prime
-/// private keys in certain formats or to subsequently import them into other
-/// code.
+/// Generates a 2-prime Rabin-Williams PrivateKey of the given bit size
+/// and the given random source.
 ///
-/// Table 1 in [2] suggests maximum numbers of primes for a given size.
+/// This method was inspired by the RSA
+/// implementation of `generate_multi_prime_key_with_exp` in [1].
 ///
-/// [1] US patent 4405829 (1972, expired)
-/// [2] http://www.cacr.math.uwaterloo.ca/techreports/2006/cacr2006-16.pdf
-pub fn generate_multi_prime_key_with_exp<R: Rng>(
-    rng: &mut R,
-    bit_size: usize,
-) -> Result<PrivateKey> {
+/// [1]: https://github.com/RustCrypto/RSA/blob/4b8fa4fb679fbf83a4ef0c19e62ef5d5b7b47715/src/algorithms.rs#L51
+pub fn generate_private_key<R: Rng>(rng: &mut R, bit_size: usize) -> Result<PrivateKey> {
     if bit_size < 64 {
         let prime_limit = (1u64 << (bit_size / N_PRIMES) as u64) as f64;
 
@@ -99,8 +92,9 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
             break;
         }
     }
+    let hmac_secret: HmacSecret = rng.gen();
 
-    Ok(PrivateKey::from_components(n_final, primes))
+    Ok(PrivateKey::from_components(n_final, primes, hmac_secret))
 }
 
 pub(crate) fn calculate_tweak_factors(mut a: bool, b: bool) -> (i8, u8) {

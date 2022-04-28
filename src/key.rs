@@ -12,6 +12,7 @@ use crate::{
     errors::{Error, Result},
 };
 
+pub type HmacSecret = [u8; 8];
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
 
@@ -36,8 +37,10 @@ pub struct PublicKey {
 pub struct PrivateKey {
     /// Public components of the private key.
     pub pubkey_components: PublicKey,
-    /// Prime factors of N, contains >= 2 elements.
+    /// Prime factors of N, contains 2 elements.
     pub(crate) primes: Vec<BigUint>,
+    /// 8-byte HMAC secret, used for picking which sqrt of p & q to use.
+    pub(crate) hmac_secret: [u8; 8],
 }
 
 impl Deref for PrivateKey {
@@ -56,10 +59,15 @@ impl PublicKey {
 
 impl PrivateKey {
     /// Constructs a key pair from the individual components.
-    pub fn from_components(n: BigUint, primes: Vec<BigUint>) -> PrivateKey {
+    pub fn from_components(
+        n: BigUint,
+        primes: Vec<BigUint>,
+        hmac_secret: HmacSecret,
+    ) -> PrivateKey {
         PrivateKey {
             pubkey_components: PublicKey { n },
             primes,
+            hmac_secret,
         }
     }
 
