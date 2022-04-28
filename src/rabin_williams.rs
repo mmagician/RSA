@@ -9,6 +9,9 @@ use serde_crate::{Deserialize, Serialize};
 
 use crate::errors::Result;
 use crate::*;
+use hmac::Hmac;
+use hmac::Mac;
+use sha2::Sha256;
 
 /// Default exponent for Rabin-Williams keys.
 const EXP: u8 = 2;
@@ -48,14 +51,23 @@ impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
     }
 }
 
-impl<H: Digest + FixedOutput> SignRW<H> for PrivateKey {
+impl<H: Digest + FixedOutput + digest::core_api::CoreProxy> SignRW<H> for PrivateKey {
     fn sign(&self, message: &[u8]) -> Result<RWSignature> {
         let mut hasher = H::new();
         Digest::update(&mut hasher, message);
         let digest = hasher.finalize().to_vec();
         let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
 
-        let (s, e, f) = self.sqrt_mod_pq(&c);
+        // calculate HMAC of `message` using `hmac_secret` as key.
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&self.hmac_secret).expect("Failed to initialise HMAC!");
+        mac.update(message);
+        let result = mac.finalize();
+
+        // only need the first byte of the result
+        let r: u8 = result.into_bytes()[0];
+
+        let (s, e, f) = self.sqrt_mod_pq(&c, r);
         Ok(RWSignature {
             s: s.to_bytes_le(),
             e,

@@ -107,7 +107,7 @@ impl PrivateKey {
     /// First, the quadratic residuosity test is performed by computing
     /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
     /// Finally, combine the two using Chinese Remainder Theorem.
-    pub(crate) fn sqrt_mod_pq(&self, c: &BigUint) -> (BigUint, i8, u8) {
+    pub(crate) fn sqrt_mod_pq(&self, c: &BigUint, r: u8) -> (BigUint, i8, u8) {
         // For the case of only two primes
         let p = self.primes[0].clone();
         let q = self.primes[1].clone();
@@ -132,10 +132,10 @@ impl PrivateKey {
             .to_biguint()
             .unwrap();
 
-        (self.combine_sqrt(&h, p, q), e, f)
+        (self.combine_sqrt(&h, p, q, r), e, f)
     }
 
-    fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint) -> BigUint {
+    fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint, r: u8) -> BigUint {
         // Now use Chinese Remainder Theorem to compute x mod n
         // Generalised CRT is stated as:
         // x == a_0 mod (n_0)
@@ -169,9 +169,18 @@ impl PrivateKey {
         assert_eq!(remainder, BigUint::from(0u8));
 
         // Compute the intermediate sqrt values modulo p and modulo q
-        let a_0: BigInt = BigInt::from(c.modpow(&exponent_p, &p));
+        let mut a_0: BigInt = BigInt::from(c.modpow(&exponent_p, &p));
+        let mut a_1: BigInt = BigInt::from(c.modpow(&exponent_q, &q));
+        // "randomly" negate sqrt values
+        if r & 1 == 1u8 {
+            a_0 *= -1
+        }
+        if r & 2 == 2u8 {
+            a_1 *= -1
+        }
 
-        let a_1: BigInt = BigInt::from(c.modpow(&exponent_q, &q));
+        // use the HMAC result to optionally negate the sqrt values
+        // TODO:
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y
