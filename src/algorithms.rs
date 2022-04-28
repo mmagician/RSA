@@ -63,10 +63,8 @@ pub fn generate_private_key<R: Rng>(rng: &mut R, bit_size: usize) -> Result<Priv
                     }
                 }
                 // second prime should be 7 mod 8
-                else {
-                    if &tmp % &eight == seven {
-                        break;
-                    }
+                else if &tmp % &eight == seven {
+                    break;
                 }
             }
             *prime = tmp;

@@ -43,7 +43,7 @@ impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
         let x = BigUint::from_bytes_le(&signature.s);
         // if the same hash function is used, then the digest `c` should match whatever the signer produced
         // Calculate e*f*H(m), which should be a square mod n
-        let h: BigUint = (c.to_bigint().unwrap() * &signature.e * &signature.f)
+        let h: BigUint = (c.to_bigint().unwrap() * signature.e * signature.f)
             .mod_floor(&self.n.to_bigint().unwrap())
             .to_biguint()
             .unwrap();
