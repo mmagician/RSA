@@ -1,7 +1,6 @@
-use alloc::vec;
-
 use crate::errors::{Error, Result};
 use crate::key::{HmacSecret, PrivateKey};
+use alloc::vec;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;

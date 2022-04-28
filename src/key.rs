@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
-
 use num_bigint::{BigInt, BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One};
@@ -178,9 +177,6 @@ impl PrivateKey {
         if r & 2 == 2u8 {
             a_1 *= -1
         }
-
-        // use the HMAC result to optionally negate the sqrt values
-        // TODO:
 
         // from Extended Euclidian Algorithm, we get Bezout's coefficients x & y s.t.:
         // 1 == gcd(p,q) == p*x + q*y

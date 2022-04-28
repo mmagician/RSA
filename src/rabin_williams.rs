@@ -1,17 +1,15 @@
 use alloc::vec::Vec;
 use digest::{Digest, FixedOutput};
-
+use hmac::{Hmac, Mac};
 use num_bigint::{BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::FromPrimitive;
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
+use sha2::Sha256;
 
 use crate::errors::Result;
 use crate::*;
-use hmac::Hmac;
-use hmac::Mac;
-use sha2::Sha256;
 
 /// Default exponent for Rabin-Williams keys.
 const EXP: u8 = 2;
