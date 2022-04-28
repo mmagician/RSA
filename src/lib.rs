@@ -17,7 +17,6 @@ pub use num_bigint::BigUint;
 #[cfg(feature = "alloc")]
 pub mod algorithms;
 pub use algorithms::generate_multi_prime_key_with_exp;
-pub use algorithms::KeyType;
 
 /// Error types.
 #[cfg(feature = "alloc")]
@@ -26,13 +25,11 @@ pub mod errors;
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
-mod rabin;
 mod rabin_williams;
+pub use crate::rabin_williams::*;
 
 #[cfg(feature = "alloc")]
-// pub use self::key::{PrivateKey, PublicKey, Sign, Verify};
 pub use self::key::{PrivateKey, PublicKey};
-pub use self::rabin::*;
 
 #[cfg(doctest)]
 mod test_readme {

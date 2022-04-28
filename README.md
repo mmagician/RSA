@@ -14,21 +14,21 @@ A portable Rabin-Williams signature scheme implementation in pure Rust.
 ## Example
 
 ```rust
-use rabin_williams::{VerifyRabin, PrivateKey, SignRabin, KeyType, generate_multi_prime_key_with_exp};
+use rabin_williams::{VerifyRW, PrivateKey, SignRW, generate_multi_prime_key_with_exp};
 use sha2::Sha256;
 use rand::rngs::OsRng;
 
 let mut rng = OsRng;
 let bits = 1024;
-let private_key = generate_multi_prime_key_with_exp(&mut rng, bits, KeyType::Rabin).expect("failed to generate a key");
+let private_key = generate_multi_prime_key_with_exp(&mut rng, bits).expect("failed to generate a key");
 let public_key = private_key.to_public_key();
 
 // Signature
 let message = String::from("fast verification scheme");
-let signature = SignRabin::<Sha256>::sign(&private_key, message.as_bytes());
+let signature = SignRW::<Sha256>::sign(&private_key, message.as_bytes());
 
 // Verification
-assert!(VerifyRabin::<Sha256>::verify(
+assert!(VerifyRW::<Sha256>::verify(
     &public_key,
     message.as_bytes(),
     signature.unwrap()
@@ -55,11 +55,9 @@ Currently at Phase 1 (v) 🚧
 There will be three phases before `1.0` 🚢 can be released.
 
 1. 🚧  Make it work
-    - [x] Prime generation: Rabin ✅
-    - [ ] Prime generation: Rabin-Williams scheme ✅
+    - [x] Prime generation: Rabin-Williams scheme ✅
     - [x] Key generation ✅
-    - [x] Rabin: Sign & Verify
-    - [ ] Rabin-Williams: Sign & Verify
+    - [x] Rabin-Williams: Sign & Verify
     - [ ] Key import & export
 2. 🚀 Make it fast
     - [ ] Benchmarks ✅

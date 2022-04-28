@@ -15,11 +15,6 @@ use crate::{
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
 
-pub enum SquareRootChoice {
-    Principal,
-    AbsPrincipal,
-    Unstructured,
-}
 /// Represents the public part of an RSA key.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
@@ -100,11 +95,11 @@ impl PrivateKey {
         Ok(())
     }
 
-    pub(crate) fn sqrt_mod_pq(
-        &self,
-        c: &BigUint,
-        sqrt_choice: &SquareRootChoice,
-    ) -> (BigUint, i8, u8) {
+    /// Compute the sqrt of `c` mod n, where n is composite
+    /// First, the quadratic residuosity test is performed by computing
+    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
+    /// Finally, combine the two using Chinese Remainder Theorem.
+    pub(crate) fn sqrt_mod_pq(&self, c: &BigUint) -> (BigUint, i8, u8) {
         // For the case of only two primes
         let p = self.primes[0].clone();
         let q = self.primes[1].clone();
@@ -130,35 +125,6 @@ impl PrivateKey {
             .unwrap();
 
         (self.combine_sqrt(&h, p, q), e, f)
-    }
-
-    /// Compute the sqrt of `c` mod n, where n is composite
-    /// First, the quadratic residuosity test is performed by computing
-    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
-    /// Finally, combine the two using Chinese Remainder Theorem.
-    pub(crate) fn sqrt_mod_n(
-        &self,
-        c: &BigUint,
-        sqrt_choice: &SquareRootChoice,
-    ) -> Result<BigUint> {
-        // For the case of only two primes
-        let p = self.primes[0].clone();
-        let q = self.primes[1].clone();
-
-        // first, checking that Legendre == 1
-        let legendre_p: BigUint = c.modpow(
-            &((&p - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
-            &p,
-        );
-        let legendre_q: BigUint = c.modpow(
-            &((&q - BigUint::one()) / BigUint::from_u8(2u8).unwrap()),
-            &q,
-        );
-        if legendre_p != BigUint::one() || legendre_q != BigUint::one() {
-            return Err(Error::QuadraticResidueNotFound);
-        }
-
-        Ok(self.combine_sqrt(c, p, q))
     }
 
     fn combine_sqrt(&self, c: &BigUint, p: BigUint, q: BigUint) -> BigUint {

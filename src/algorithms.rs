@@ -10,16 +10,6 @@ use rand::Rng;
 
 const N_PRIMES: usize = 2;
 
-pub enum KeyType {
-    // Rabin signatures only require 3 mod 4 for both primes,
-    // thus being easier to find.
-    Rabin,
-    // Williams signature requires one prime to be 3 mod 8
-    // and the other 7 mod 8. Each RabinWilliams prime pair
-    // will also be a Rabin pair.
-    RabinWilliams,
-}
-
 /// Generates a multi-prime RSA keypair of the given bit size, public exponent,
 /// and the given random source, as suggested in [1]. Although the public
 /// keys are compatible (actually, indistinguishable) from the 2-prime case,
@@ -34,7 +24,6 @@ pub enum KeyType {
 pub fn generate_multi_prime_key_with_exp<R: Rng>(
     rng: &mut R,
     bit_size: usize,
-    key_type: KeyType,
 ) -> Result<PrivateKey> {
     if bit_size < 64 {
         let prime_limit = (1u64 << (bit_size / N_PRIMES) as u64) as f64;
@@ -54,7 +43,6 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
     let mut primes = vec![BigUint::zero(); N_PRIMES as usize];
     let n_final: BigUint;
     let three: BigUint = BigUint::from(3u8);
-    let four: BigUint = BigUint::from(4u8);
     let seven: BigUint = BigUint::from(7u8);
     let eight: BigUint = BigUint::from(8u8);
 
@@ -73,29 +61,20 @@ pub fn generate_multi_prime_key_with_exp<R: Rng>(
         // will give good results.
         for (i, prime) in primes.iter_mut().enumerate() {
             let mut tmp;
-            match key_type {
-                KeyType::Rabin => loop {
-                    tmp = rng.gen_prime(todo / (N_PRIMES - i));
-                    // for efficient sqrt calculations, we need both primes 3 mod 4
-                    if &tmp % &four == three {
+            loop {
+                tmp = rng.gen_prime(todo / (N_PRIMES - i));
+                // first prime should be 3 mod 8
+                if i == 0 {
+                    if &tmp % &eight == three {
                         break;
                     }
-                },
-                KeyType::RabinWilliams => loop {
-                    tmp = rng.gen_prime(todo / (N_PRIMES - i));
-                    // first prime should be 3 mod 8
-                    if i == 0 {
-                        if &tmp % &eight == three {
-                            break;
-                        }
+                }
+                // second prime should be 7 mod 8
+                else {
+                    if &tmp % &eight == seven {
+                        break;
                     }
-                    // second prime should be 7 mod 8
-                    else {
-                        if &tmp % &eight == seven {
-                            break;
-                        }
-                    }
-                },
+                }
             }
             *prime = tmp;
             todo -= prime.bits();

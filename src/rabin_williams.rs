@@ -8,7 +8,6 @@ use num_traits::FromPrimitive;
 use serde_crate::{Deserialize, Serialize};
 
 use crate::errors::Result;
-use crate::key::SquareRootChoice;
 use crate::*;
 
 /// Default exponent for RSA keys.
@@ -23,11 +22,6 @@ pub struct RWSignature {
 }
 pub trait SignRW<H: Digest + FixedOutput> {
     fn sign(&self, message: &[u8]) -> Result<RWSignature>;
-    fn sign_with_sqrt_choice(
-        &self,
-        message: &[u8],
-        sqrt_choice: SquareRootChoice,
-    ) -> Result<RWSignature>;
     fn validate(&self) -> Result<()>;
 }
 
@@ -56,20 +50,12 @@ impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
 
 impl<H: Digest + FixedOutput> SignRW<H> for PrivateKey {
     fn sign(&self, message: &[u8]) -> Result<RWSignature> {
-        SignRW::<H>::sign_with_sqrt_choice(self, message, SquareRootChoice::Principal)
-    }
-
-    fn sign_with_sqrt_choice(
-        &self,
-        message: &[u8],
-        sqrt_choice: SquareRootChoice,
-    ) -> Result<RWSignature> {
         let mut hasher = H::new();
         Digest::update(&mut hasher, message);
         let digest = hasher.finalize().to_vec();
         let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
 
-        let (s, e, f) = self.sqrt_mod_pq(&c, &sqrt_choice);
+        let (s, e, f) = self.sqrt_mod_pq(&c);
         Ok(RWSignature {
             s: s.to_bytes_le(),
             e,
@@ -100,7 +86,6 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha2::Sha256;
 
-    use crate::algorithms::KeyType;
     use std::time::SystemTime;
 
     #[test]
@@ -156,9 +141,7 @@ mod tests {
                 let mut rng = StdRng::seed_from_u64(seed.as_secs());
 
                 for _ in 0..10 {
-                    let private_key =
-                        generate_multi_prime_key_with_exp(&mut rng, $size, KeyType::RabinWilliams)
-                            .unwrap();
+                    let private_key = generate_multi_prime_key_with_exp(&mut rng, $size).unwrap();
                     assert_eq!(private_key.n.bits(), $size);
 
                     test_key_basics(&private_key);
@@ -186,11 +169,9 @@ mod tests {
             .unwrap();
         let mut rng = StdRng::seed_from_u64(seed.as_secs());
         for i in 0..12 {
-            assert!(
-                generate_multi_prime_key_with_exp(&mut rng, i, KeyType::RabinWilliams).is_err()
-            );
+            assert!(generate_multi_prime_key_with_exp(&mut rng, i).is_err());
         }
-        assert!(generate_multi_prime_key_with_exp(&mut rng, 13, KeyType::RabinWilliams).is_ok());
+        assert!(generate_multi_prime_key_with_exp(&mut rng, 13).is_ok());
     }
 
     #[test]
