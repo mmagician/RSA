@@ -120,8 +120,11 @@ struct ExpanderXmd<T: DynDigest + Clone> {
 impl<T: DynDigest + Clone> ExpanderXmd<T> {
     fn expand(&self, msg: &[u8], output_size: usize) -> Vec<u8> {
         let mut hasher = self.hasher.clone();
-        // output size of the hash function, e.g. 32 bytes = 256 bits for sha2::Sha256
+        // output size of the hash function, e.g. 64 bytes = 512 bits for sha2::512
         let b_len = hasher.output_size();
+        // number of iterations that we need to fill the output_size with hashed bytes,
+        // e.g. for output_size = 1024 and sha512, we'd need 2 iterations, while for
+        // 1025 we need a 3rd one (which later gets truncated from 1536 to 1025)
         let ell = (output_size + (b_len - 1)) / b_len;
         assert!(
             ell <= 255,
