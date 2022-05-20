@@ -7,7 +7,7 @@ use num_integer::Integer;
 use num_traits::{FromPrimitive, One};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::Sha512;
 
 use crate::{
     algorithms::{calculate_tweak_factors, hash},
@@ -74,7 +74,7 @@ impl PrivateKey {
 
         // calculate HMAC of `message` using `hmac_secret` as key.
         let mut mac =
-            Hmac::<Sha256>::new_from_slice(&self.hmac_secret).expect("Failed to initialise HMAC!");
+            Hmac::<Sha512>::new_from_slice(&self.hmac_secret).expect("Failed to initialise HMAC!");
         mac.update(message);
         let result = mac.finalize();
 
