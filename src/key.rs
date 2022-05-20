@@ -73,8 +73,9 @@ impl PrivateKey {
 
     /// Get the public key from the private key, cloning `n`.
     ///
-    /// Generally this is not needed since `PrivateKey` implements the `PublicKey` trait,
-    /// but it can occationally be useful to discard the private information entirely.
+    /// Generally this is not needed since `PrivateKey` implements the
+    /// `PublicKey` trait, but it can occationally be useful to discard the
+    /// private information entirely.
     pub fn to_public_key(&self) -> PublicKey {
         // Safe to unwrap since n is already verified.
         self.pubkey_components.clone()
@@ -105,8 +106,8 @@ impl PrivateKey {
 
     /// Compute the sqrt of `c` mod n, where n is composite
     /// First, the quadratic residuosity test is performed by computing
-    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p and mod q.
-    /// Finally, combine the two using Chinese Remainder Theorem.
+    /// Legendre Symbol L. If L == 1, proceed to computing individual sqrt mod p
+    /// and mod q. Finally, combine the two using Chinese Remainder Theorem.
     pub(crate) fn sqrt_mod_pq(&self, c: &BigUint, r: u8) -> (BigUint, i8, u8) {
         // For the case of only two primes
         let p = self.primes[0].clone();

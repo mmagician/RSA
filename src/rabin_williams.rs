@@ -31,7 +31,8 @@ pub trait SignRW<H: Digest + FixedOutput> {
 pub trait VerifyRW<H: Digest + FixedOutput> {
     /// Verify a signed message.
     /// `message` must be the original, unhashed message.
-    /// If the message is valid, `Ok(())` is returned, otherwiese an `Err` indicating failure.
+    /// If the message is valid, `Ok(())` is returned, otherwiese an `Err`
+    /// indicating failure.
     fn verify(&self, message: &[u8], sig: RWSignature) -> bool;
 }
 
@@ -40,8 +41,9 @@ impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
         let digest = hash(message);
         let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
         let x = BigUint::from_bytes_le(&signature.s);
-        // if the same hash function is used, then the digest `c` should match whatever the signer produced
-        // Calculate e*f*H(m), which should be a square mod n
+        // if the same hash function is used, then the digest `c` should match whatever
+        // the signer produced Calculate e*f*H(m), which should be a square mod
+        // n
         let h: BigUint = (c.to_bigint().unwrap() * signature.e * signature.f)
             .mod_floor(&self.n.to_bigint().unwrap())
             .to_biguint()

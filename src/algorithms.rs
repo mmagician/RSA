@@ -128,7 +128,8 @@ impl<T: DynDigest + Clone> ExpanderXmd<T> {
             "The ratio of desired output to the output size of hash function is too large!"
         );
 
-        // The program should abort if integer that we're trying to convert is too large.
+        // The program should abort if integer that we're trying to convert is too
+        // large.
         assert!(
             output_size < (1 << 16),
             "Length should be smaller than 2^16"
