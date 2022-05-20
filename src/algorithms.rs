@@ -1,11 +1,14 @@
 use crate::errors::{Error, Result};
 use crate::key::{HmacSecret, PrivateKey};
 use alloc::vec;
+use alloc::vec::Vec;
+use digest::DynDigest;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
 use num_traits::Float;
 use num_traits::{One, Zero};
 use rand::Rng;
+use sha2::Sha512;
 
 const N_PRIMES: usize = 2;
 
@@ -106,6 +109,54 @@ pub(crate) fn calculate_tweak_factors(mut a: bool, b: bool) -> (i8, u8) {
         e = -1
     }
     (e, f)
+}
+
+struct ExpanderXmd<T: DynDigest + Clone> {
+    pub(super) hasher: T,
+}
+
+impl<T: DynDigest + Clone> ExpanderXmd<T> {
+    fn expand(&self, msg: &[u8], output_size: usize) -> Vec<u8> {
+        let mut hasher = self.hasher.clone();
+        // output size of the hash function, e.g. 32 bytes = 256 bits for sha2::Sha256
+        let b_len = hasher.output_size();
+        let ell = (output_size + (b_len - 1)) / b_len;
+        assert!(
+            ell <= 255,
+            "The ratio of desired output to the output size of hash function is too large!"
+        );
+
+        // The program should abort if integer that we're trying to convert is too large.
+        assert!(
+            output_size < (1 << 16),
+            "Length should be smaller than 2^16"
+        );
+
+        let mut uniform_bytes: Vec<u8> = Vec::new();
+
+        hasher.update(msg);
+        hasher.update(&[0u8]);
+        let h_0 = hasher.finalize_reset();
+        uniform_bytes.extend_from_slice(&h_0);
+
+        let mut h_i = h_0;
+
+        for i in 1..=ell {
+            // update the hasher with xor of b_0 and b_i elements
+            hasher.update(&h_i);
+            hasher.update(&[i as u8]);
+            h_i = hasher.finalize_reset();
+            uniform_bytes.extend_from_slice(&h_i);
+        }
+        uniform_bytes[0..output_size].to_vec()
+    }
+}
+
+pub(crate) fn hash(msg: &[u8]) -> Vec<u8> {
+    let expander = ExpanderXmd {
+        hasher: Sha512::default(),
+    };
+    expander.expand(msg, 1024)
 }
 
 #[cfg(test)]

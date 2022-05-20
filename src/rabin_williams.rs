@@ -8,6 +8,7 @@ use num_traits::FromPrimitive;
 use serde_crate::{Deserialize, Serialize};
 use sha2::Sha256;
 
+use crate::algorithms::hash;
 use crate::errors::Result;
 use crate::*;
 
@@ -35,9 +36,8 @@ pub trait VerifyRW<H: Digest + FixedOutput> {
 
 impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
     fn verify(&self, message: &[u8], signature: RWSignature) -> bool {
-        let mut hasher = H::new();
-        Digest::update(&mut hasher, message);
-        let c = BigUint::from_bytes_le(&hasher.finalize()).mod_floor(&self.n);
+        let digest = hash(message);
+        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
         let x = BigUint::from_bytes_le(&signature.s);
         // if the same hash function is used, then the digest `c` should match whatever the signer produced
         // Calculate e*f*H(m), which should be a square mod n
@@ -51,9 +51,7 @@ impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
 
 impl<H: Digest + FixedOutput + digest::core_api::CoreProxy> SignRW<H> for PrivateKey {
     fn sign(&self, message: &[u8]) -> Result<RWSignature> {
-        let mut hasher = H::new();
-        Digest::update(&mut hasher, message);
-        let digest = hasher.finalize().to_vec();
+        let digest = hash(message);
         let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
 
         // calculate HMAC of `message` using `hmac_secret` as key.
