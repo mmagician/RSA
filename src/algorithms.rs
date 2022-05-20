@@ -1,7 +1,6 @@
-use crate::errors::{Error, Result};
-use crate::key::{HmacSecret, PrivateKey};
 use alloc::vec;
 use alloc::vec::Vec;
+
 use digest::DynDigest;
 use num_bigint::{BigUint, RandPrime};
 #[allow(unused_imports)]
@@ -9,6 +8,9 @@ use num_traits::Float;
 use num_traits::{One, Zero};
 use rand::Rng;
 use sha2::Sha512;
+
+use crate::errors::{Error, Result};
+use crate::key::{HmacSecret, PrivateKey};
 
 const N_PRIMES: usize = 2;
 

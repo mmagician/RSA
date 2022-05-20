@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+
 use digest::{Digest, FixedOutput};
 use hmac::{Hmac, Mac};
 use num_bigint::{BigUint, ToBigInt};
@@ -87,14 +88,14 @@ impl<H: Digest + FixedOutput + digest::core_api::CoreProxy> SignRW<H> for Privat
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::time::SystemTime;
 
-    use crate::algorithms::generate_private_key;
     use num_traits::{FromPrimitive, ToPrimitive};
     use rand::{rngs::StdRng, SeedableRng};
     use sha2::Sha256;
 
-    use std::time::SystemTime;
+    use super::*;
+    use crate::algorithms::generate_private_key;
 
     #[test]
     fn test_from_into() {
