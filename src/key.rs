@@ -1,21 +1,30 @@
 use alloc::vec::Vec;
 use core::ops::Deref;
 
+use hmac::{Hmac, Mac};
 use num_bigint::{BigInt, BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One};
 #[cfg(feature = "serde")]
 use serde_crate::{Deserialize, Serialize};
+use sha2::Sha256;
 
 use crate::{
-    algorithms::calculate_tweak_factors,
+    algorithms::{calculate_tweak_factors, hash},
     errors::{Error, Result},
 };
 
 pub type HmacSecret = [u8; 8];
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
-
+type DigestResult = Vec<u8>;
+pub struct RWSignature {
+    s: DigestResult,
+    // e: {-1, 1}
+    e: i8,
+    // f: {1, 2}
+    f: u8,
+}
 /// Represents the public part of an RSA key.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
@@ -27,6 +36,21 @@ pub struct PublicKey {
     pub n: BigUint,
 }
 
+impl PublicKey {
+    pub fn verify(&self, message: &[u8], signature: RWSignature) -> bool {
+        let digest = hash(message);
+        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
+        let x = BigUint::from_bytes_le(&signature.s);
+        // if the same hash function is used, then the digest `c` should match whatever
+        // the signer produced Calculate e*f*H(m), which should be a square mod
+        // n
+        let h: BigUint = (c.to_bigint().unwrap() * signature.e * signature.f)
+            .mod_floor(&self.n.to_bigint().unwrap())
+            .to_biguint()
+            .unwrap();
+        h == x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)
+    }
+}
 /// Represents a whole RSA key, public and private parts.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -43,6 +67,28 @@ pub struct PrivateKey {
     pub(crate) hmac_secret: [u8; 8],
 }
 
+impl PrivateKey {
+    pub fn sign(&self, message: &[u8]) -> Result<RWSignature> {
+        let digest = hash(message);
+        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
+
+        // calculate HMAC of `message` using `hmac_secret` as key.
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&self.hmac_secret).expect("Failed to initialise HMAC!");
+        mac.update(message);
+        let result = mac.finalize();
+
+        // only need the first byte of the result
+        let r: u8 = result.into_bytes()[0];
+
+        let (s, e, f) = self.sqrt_mod_pq(&c, r);
+        Ok(RWSignature {
+            s: s.to_bytes_le(),
+            e,
+            f,
+        })
+    }
+}
 impl Deref for PrivateKey {
     type Target = PublicKey;
     fn deref(&self) -> &PublicKey {

@@ -1,103 +1,12 @@
-use alloc::vec::Vec;
-
-use digest::{Digest, FixedOutput};
-use hmac::{Hmac, Mac};
-use num_bigint::{BigUint, ToBigInt};
-use num_integer::Integer;
-use num_traits::FromPrimitive;
-#[cfg(feature = "serde")]
-use serde_crate::{Deserialize, Serialize};
-use sha2::Sha256;
-
-use crate::algorithms::hash;
-use crate::errors::Result;
-use crate::*;
-
-/// Default exponent for Rabin-Williams keys.
-const EXP: u8 = 2;
-type DigestResult = Vec<u8>;
-pub struct RWSignature {
-    s: DigestResult,
-    // e: {-1, 1}
-    e: i8,
-    // f: {1, 2}
-    f: u8,
-}
-pub trait SignRW<H: Digest + FixedOutput> {
-    fn sign(&self, message: &[u8]) -> Result<RWSignature>;
-    fn validate(&self) -> Result<()>;
-}
-
-pub trait VerifyRW<H: Digest + FixedOutput> {
-    /// Verify a signed message.
-    /// `message` must be the original, unhashed message.
-    /// If the message is valid, `Ok(())` is returned, otherwiese an `Err`
-    /// indicating failure.
-    fn verify(&self, message: &[u8], sig: RWSignature) -> bool;
-}
-
-impl<H: Digest + FixedOutput> VerifyRW<H> for PublicKey {
-    fn verify(&self, message: &[u8], signature: RWSignature) -> bool {
-        let digest = hash(message);
-        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
-        let x = BigUint::from_bytes_le(&signature.s);
-        // if the same hash function is used, then the digest `c` should match whatever
-        // the signer produced Calculate e*f*H(m), which should be a square mod
-        // n
-        let h: BigUint = (c.to_bigint().unwrap() * signature.e * signature.f)
-            .mod_floor(&self.n.to_bigint().unwrap())
-            .to_biguint()
-            .unwrap();
-        h == x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)
-    }
-}
-
-impl<H: Digest + FixedOutput + digest::core_api::CoreProxy> SignRW<H> for PrivateKey {
-    fn sign(&self, message: &[u8]) -> Result<RWSignature> {
-        let digest = hash(message);
-        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
-
-        // calculate HMAC of `message` using `hmac_secret` as key.
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(&self.hmac_secret).expect("Failed to initialise HMAC!");
-        mac.update(message);
-        let result = mac.finalize();
-
-        // only need the first byte of the result
-        let r: u8 = result.into_bytes()[0];
-
-        let (s, e, f) = self.sqrt_mod_pq(&c, r);
-        Ok(RWSignature {
-            s: s.to_bytes_le(),
-            e,
-            f,
-        })
-    }
-
-    fn validate(&self) -> Result<()> {
-        Self::validate(self)?;
-        for prime in &self.primes {
-            // For a Rabin scheme, we require the primes to be == 3 mod 4
-            assert_eq!(
-                prime % BigUint::from_u64(4).unwrap(),
-                BigUint::from_u64(3).unwrap()
-            );
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
 
+    use num_bigint::BigUint;
     use num_traits::{FromPrimitive, ToPrimitive};
     use rand::{rngs::StdRng, SeedableRng};
-    use sha2::Sha256;
 
-    use super::*;
-    use crate::algorithms::generate_private_key;
+    use crate::{algorithms::generate_private_key, PrivateKey, PublicKey};
 
     #[test]
     fn test_from_into() {
@@ -132,17 +41,13 @@ mod tests {
             primes: vec![p, q],
             hmac_secret,
         };
-        assert!(SignRW::<Sha256>::validate(&private_key).is_ok());
+        assert!(private_key.validate().is_ok());
         // And a public key for Bob
         let public_key: PublicKey = private_key.to_public_key();
         // Sign the message
         let message = String::from("fast verification scheme");
-        let signature = SignRW::<Sha256>::sign(&private_key, message.as_bytes());
-        assert!(VerifyRW::<Sha256>::verify(
-            &public_key,
-            message.as_bytes(),
-            signature.unwrap()
-        ));
+        let signature = private_key.sign(message.as_bytes());
+        assert!(public_key.verify(message.as_bytes(), signature.unwrap()));
     }
 
     macro_rules! key_generation {

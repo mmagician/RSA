@@ -25,10 +25,9 @@ pub mod errors;
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod key;
-mod rabin_williams;
+mod tests;
 #[cfg(feature = "alloc")]
 pub use self::key::{PrivateKey, PublicKey};
-pub use crate::rabin_williams::*;
 
 #[cfg(doctest)]
 mod test_readme {
