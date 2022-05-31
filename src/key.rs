@@ -10,7 +10,7 @@ use serde_crate::{Deserialize, Serialize};
 use sha2::Sha512;
 
 use crate::{
-    algorithms::{calculate_tweak_factors, hash, compress_signature},
+    algorithms::{calculate_tweak_factors, compress_signature, hash},
     errors::{Error, Result},
 };
 
@@ -82,9 +82,9 @@ impl PrivateKey {
         let r: u8 = result.into_bytes()[0];
 
         let (s, e, f) = self.sqrt_mod_pq(&c, r);
-        let compressed_signature = compress_signature(s, &self.pubkey_components);
+        let s = compress_signature(s, &self.pubkey_components.n);
         Ok(RWSignature {
-            s: compressed_signature.to_bytes_le(),
+            s: s.to_bytes_le(),
             e,
             f,
         })
