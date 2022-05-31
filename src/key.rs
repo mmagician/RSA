@@ -10,14 +10,14 @@ use serde_crate::{Deserialize, Serialize};
 use sha2::Sha512;
 
 use crate::{
-    algorithms::{calculate_tweak_factors, hash},
+    algorithms::{calculate_tweak_factors, hash, compress_signature},
     errors::{Error, Result},
 };
 
 pub type HmacSecret = [u8; 8];
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
-type DigestResult = Vec<u8>;
+pub(crate) type DigestResult = Vec<u8>;
 pub struct RWSignature {
     s: DigestResult,
     // e: {-1, 1}
@@ -82,8 +82,9 @@ impl PrivateKey {
         let r: u8 = result.into_bytes()[0];
 
         let (s, e, f) = self.sqrt_mod_pq(&c, r);
+        let compressed_signature = compress_signature(s, &self.pubkey_components);
         Ok(RWSignature {
-            s: s.to_bytes_le(),
+            s: compressed_signature.to_bytes_le(),
             e,
             f,
         })

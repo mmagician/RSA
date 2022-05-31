@@ -10,7 +10,8 @@ use rand::Rng;
 use sha2::Sha512;
 
 use crate::errors::{Error, Result};
-use crate::key::{HmacSecret, PrivateKey};
+use crate::key::{DigestResult, HmacSecret, PrivateKey};
+use crate::PublicKey;
 
 const N_PRIMES: usize = 2;
 
@@ -163,6 +164,13 @@ pub(crate) fn hash(msg: &[u8]) -> Vec<u8> {
         hasher: Sha512::default(),
     };
     expander.expand(msg, 1024)
+}
+
+pub(crate) fn compress_signature(
+    uncompressed_signature: BigUint,
+    pk: &PublicKey,
+) -> BigUint {
+    unimplemented!()
 }
 
 #[cfg(test)]
