@@ -176,7 +176,7 @@ pub(crate) fn compress_signature(s: BigUint, n: &BigUint) -> BigUint {
     let mut v_previous: BigUint = BigUint::from(0u8);
     let mut v_current: BigUint = BigUint::from(1u8);
     let mut v_next: BigUint;
-    let mut s_current: BigUint = s.clone();
+    let mut s_current: BigUint = s;
     let mut n_current: BigUint = n.clone();
     let mut alpha: BigUint;
     let mut tmp: BigUint;
@@ -203,9 +203,9 @@ pub fn verify_compressed_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> boo
 
 /// Decompress a signature and return sqrt(t), if found
 fn decompress_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> Result<BigUint> {
-    let t = (h * v * v).mod_floor(&n);
+    let t = (h * v * v).mod_floor(n);
     // assert that t mod n is not zero
-    if t.mod_floor(&n).is_zero() {
+    if t.mod_floor(n).is_zero() {
         return Err(Error::Verification);
     }
     let t_sqrt = t.sqrt();
