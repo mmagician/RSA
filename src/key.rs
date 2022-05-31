@@ -10,7 +10,7 @@ use serde_crate::{Deserialize, Serialize};
 use sha2::Sha512;
 
 use crate::{
-    algorithms::{calculate_tweak_factors, compress_signature, hash},
+    algorithms::{calculate_tweak_factors, compress_signature, hash, verify_compressed_signature},
     errors::{Error, Result},
 };
 
@@ -40,7 +40,7 @@ impl PublicKey {
     pub fn verify(&self, message: &[u8], signature: RWSignature) -> bool {
         let digest = hash(message);
         let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
-        let x = BigUint::from_bytes_le(&signature.s);
+        let v = BigUint::from_bytes_le(&signature.s);
         // if the same hash function is used, then the digest `c` should match whatever
         // the signer produced Calculate e*f*H(m), which should be a square mod
         // n
@@ -48,7 +48,7 @@ impl PublicKey {
             .mod_floor(&self.n.to_bigint().unwrap())
             .to_biguint()
             .unwrap();
-        h == x.modpow(&BigUint::from_u8(EXP).unwrap(), &self.n)
+        verify_compressed_signature(&v, &h, &self.n)
     }
 }
 /// Represents a whole RSA key, public and private parts.
