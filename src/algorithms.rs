@@ -3,15 +3,13 @@ use alloc::vec::Vec;
 
 use digest::DynDigest;
 use num_bigint::{BigUint, RandPrime};
-#[allow(unused_imports)]
-use num_traits::Float;
+use num_integer::Integer;
 use num_traits::{One, Zero};
 use rand::Rng;
 use sha2::Sha512;
 
 use crate::errors::{Error, Result};
-use crate::key::{DigestResult, HmacSecret, PrivateKey};
-use crate::PublicKey;
+use crate::key::{HmacSecret, PrivateKey};
 
 const N_PRIMES: usize = 2;
 
@@ -166,16 +164,70 @@ pub(crate) fn hash(msg: &[u8]) -> Vec<u8> {
     expander.expand(msg, 1024)
 }
 
-pub(crate) fn compress_signature(
-    uncompressed_signature: BigUint,
-    pk: &PublicKey,
-) -> BigUint {
-    unimplemented!()
+#[must_use]
+pub(crate) fn compress_signature(s: BigUint, n: &BigUint) -> BigUint {
+    // assert that n, s are co-prime
+    assert!(n.gcd(&s).is_one(), "n and s are not co-prime!");
+
+    // we'll return the largest denominator of principal convergent of s/n that is
+    // less than sqrt(n)
+    let root_n = n.clone().sqrt();
+
+    let mut v_previous: BigUint = BigUint::from(0u8);
+    let mut v_current: BigUint = BigUint::from(1u8);
+    let mut v_next: BigUint;
+    let mut s_current: BigUint = s.clone();
+    let mut n_current: BigUint = n.clone();
+    let mut alpha: BigUint;
+    let mut tmp: BigUint;
+    loop {
+        (alpha, tmp) = n_current.div_mod_floor(&s_current);
+        // tmp = n_current % &s_current;
+        // compute the next denominator
+        v_next = &v_current * &alpha + &v_previous;
+        // break when v_next is larger than root_n
+        if v_next > root_n {
+            return v_current;
+        }
+        v_previous = v_current;
+        v_current = v_next;
+        n_current = s_current;
+        s_current = tmp;
+    }
+}
+
+/// Verify whether the passed compressed signature `v` is valid
+pub fn verify_compressed_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> bool {
+    decompress_signature(v, h, n).is_ok()
+}
+
+/// Decompress a signature and return sqrt(t), if found
+fn decompress_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> Result<BigUint> {
+    let t = (h * v * v).mod_floor(&n);
+    // assert that t mod n is not zero
+    if t.mod_floor(&n).is_zero() {
+        return Err(Error::Verification);
+    }
+    let t_sqrt = t.sqrt();
+    // assert that t is a perfect square
+    if &t_sqrt * &t_sqrt != t {
+        return Err(Error::Verification);
+    }
+    // likely only going to use the output for sanity checks
+    Ok(t_sqrt)
 }
 
 #[cfg(test)]
 mod tests {
+    use num_bigint::BigUint;
+    use num_bigint::ModInverse;
+    use num_integer::Integer;
+    use num_traits::FromPrimitive;
+
     use crate::algorithms::calculate_tweak_factors;
+    use crate::algorithms::compress_signature;
+    use crate::algorithms::decompress_signature;
+    use crate::errors::Error;
 
     #[test]
     fn test_e_f() {
@@ -183,5 +235,66 @@ mod tests {
         assert_eq!(calculate_tweak_factors(false, false), (-1, 1));
         assert_eq!(calculate_tweak_factors(false, true), (1, 2));
         assert_eq!(calculate_tweak_factors(true, false), (-1, 2));
+    }
+
+    #[test]
+    fn test_compress_signature() {
+        let n = BigUint::from_u8(77u8).unwrap();
+        let s = BigUint::from_u8(25u8).unwrap();
+
+        assert_eq!(compress_signature(s, &n), BigUint::from_u8(3u8).unwrap());
+    }
+
+    #[test]
+    #[allow(unused)]
+    #[should_panic(expected = "")]
+    fn test_compress_signature_zero_should_fail() {
+        let n = BigUint::from_u8(77u8).unwrap();
+        let s = BigUint::from_u8(0u8).unwrap();
+
+        compress_signature(s, &n);
+    }
+
+    #[test]
+    #[allow(unused)]
+    #[should_panic(expected = "n and s are not co-prime!")]
+    fn test_compress_signature_coprime_should_fail() {
+        let n = BigUint::from_u8(77u8).unwrap();
+        let s = BigUint::from_u8(7u8).unwrap();
+
+        compress_signature(s, &n);
+    }
+
+    #[test]
+    fn test_decompress_signature() {
+        let n = BigUint::from_u8(77u8).unwrap();
+        let h = BigUint::from_u8(9u8).unwrap();
+        let v = BigUint::from_u8(3u8).unwrap();
+
+        let expected_signature = BigUint::from_u8(25u8).unwrap();
+        let sqrt_t = decompress_signature(&v, &h, &n).unwrap();
+        // sanity check
+        let computed_signature = (&sqrt_t
+            * (&v
+                .mod_inverse(&n)
+                .expect("no multiplicative inverse for sqrt(t)")
+                .to_biguint()
+                .expect("Failed to cast back to BigUint")))
+            .mod_floor(&n);
+        // it only makes sense to compare squares
+        assert_eq!(
+            (&computed_signature * &computed_signature).mod_floor(&n),
+            (&expected_signature * &expected_signature).mod_floor(&n)
+        );
+    }
+
+    #[test]
+    #[allow(unused)]
+    fn test_decompress_signature_zero_should_fail() {
+        let n = BigUint::from_u8(77u8).unwrap();
+        let h = BigUint::from_u8(9u8).unwrap();
+        let v = BigUint::from_u8(0u8).unwrap();
+
+        assert_eq!(decompress_signature(&v, &h, &n), Err(Error::Verification));
     }
 }
