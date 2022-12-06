@@ -34,9 +34,7 @@ hex = "0.4.0"
 hex-literal = "0.3.3"
 serde_test = "1.0.89"
 rand_xorshift = "0.3.0"
-
-[profile.release]
-# debug = true
+criterion = "0.3"
 
 [features]
 default = ["std", "pem"]
@@ -50,3 +48,7 @@ pem = ["alloc"]
 [package.metadata.docs.rs]
 features = ["std", "pem", "serde"]
 rustdoc-args = ["--cfg", "docsrs"]
+
+[[bench]]
+name = "sig_verify"
+harness = false

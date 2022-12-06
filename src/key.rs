@@ -18,6 +18,8 @@ pub type HmacSecret = [u8; 8];
 /// Default exponent for RSA keys.
 const EXP: u8 = 2;
 pub(crate) type DigestResult = Vec<u8>;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RWSignature {
     s: DigestResult,
     // e: {-1, 1}
