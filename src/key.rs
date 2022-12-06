@@ -41,12 +41,13 @@ pub struct PublicKey {
 impl PublicKey {
     pub fn verify(&self, message: &[u8], signature: RWSignature) -> bool {
         let digest = hash(message);
-        let c = BigUint::from_bytes_le(&digest).mod_floor(&self.n);
+        let c = BigInt::from_bytes_le(num_bigint::Sign::Plus, &digest); //.mod_floor(&self.n);
         let v = BigUint::from_bytes_le(&signature.s);
         // if the same hash function is used, then the digest `c` should match whatever
         // the signer produced Calculate e*f*H(m), which should be a square mod
         // n
-        let h: BigUint = (c.to_bigint().unwrap() * signature.e * signature.f)
+        let tv: i8 = signature.e * signature.f as i8;
+        let h: BigUint = (c * tv)
             .mod_floor(&self.n.to_bigint().unwrap())
             .to_biguint()
             .unwrap();
