@@ -205,7 +205,7 @@ pub fn verify_compressed_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> boo
 fn decompress_signature(v: &BigUint, h: &BigUint, n: &BigUint) -> Result<BigUint> {
     let t = (h * v * v).mod_floor(n);
     // assert that t mod n is not zero
-    if t.mod_floor(n).is_zero() {
+    if t.is_zero() {
         return Err(Error::Verification);
     }
     let t_sqrt = t.sqrt();
