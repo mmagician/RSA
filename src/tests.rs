@@ -4,6 +4,7 @@ mod tests {
     extern crate test;
 
     use num_bigint::{BigInt, BigUint, RandBigInt, ToBigInt};
+    use num_integer::Integer;
     use num_traits::{FromPrimitive, ToPrimitive};
     use rand::{rngs::StdRng, SeedableRng};
     use test::Bencher;
@@ -176,7 +177,45 @@ mod tests {
 
         let mut i = 0;
         b.iter(|| {
-            bigints[i % SAMPLES].to_bigint();
+            bigints[i % SAMPLES].to_bigint().unwrap();
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn biguint_mod_floor(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_biguint(1024))
+            .collect::<Vec<BigUint>>();
+        let n = rng.gen_biguint(1024);
+        let mut i = 0;
+        b.iter(|| {
+            bigints[i % SAMPLES].mod_floor(&n);
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn bigint_mod_floor(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_bigint(2048))
+            .collect::<Vec<BigInt>>();
+        let n = rng.gen_bigint(1024);
+        let mut i = 0;
+        b.iter(|| {
+            bigints[i % SAMPLES].mod_floor(&n);
             i += 1;
         });
     }
@@ -196,6 +235,46 @@ mod tests {
         let mut i = 0;
         b.iter(|| {
             bigints[i % SAMPLES].to_biguint();
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn biguint_mul(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_bigint(1024))
+            .collect::<Vec<BigInt>>();
+
+        let mut i = 0;
+        b.iter(|| {
+            let _ = &bigints[i % SAMPLES] * &bigints[(i + 1) % SAMPLES];
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn biguint_mul_then_mod(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_bigint(1024))
+            .collect::<Vec<BigInt>>();
+
+        let n = rng.gen_bigint(1024);
+
+        let mut i = 0;
+        b.iter(|| {
+            (&bigints[i % SAMPLES] * &bigints[(i + 1) % SAMPLES]).mod_floor(&n);
             i += 1;
         });
     }
