@@ -6,10 +6,13 @@ mod tests {
     use num_bigint::{BigInt, BigUint, RandBigInt, ToBigInt};
     use num_integer::Integer;
     use num_traits::{FromPrimitive, ToPrimitive};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     use test::Bencher;
 
-    use crate::{algorithms::generate_private_key, PrivateKey, PublicKey};
+    use crate::{
+        algorithms::{generate_private_key, hash},
+        PrivateKey, PublicKey,
+    };
 
     #[test]
     fn test_from_into() {
@@ -259,7 +262,7 @@ mod tests {
     }
 
     #[bench]
-    fn biguint_mul_then_mod(b: &mut Bencher) {
+    fn biguint_triple_mul(b: &mut Bencher) {
         const SAMPLES: usize = 1000;
         let seed = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -274,7 +277,56 @@ mod tests {
 
         let mut i = 0;
         b.iter(|| {
-            (&bigints[i % SAMPLES] * &bigints[(i + 1) % SAMPLES]).mod_floor(&n);
+            (&bigints[i % SAMPLES] * &bigints[(i + 1) % SAMPLES] * &bigints[(i + 1) % SAMPLES])
+                .mod_floor(&n);
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn test_hash(b: &mut Bencher) {
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let msg: &[u8] = &rng.gen::<[u8; 32]>();
+
+        let mut i = 0;
+        b.iter(|| {
+            hash(msg);
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn test_sqrt(b: &mut Bencher) {
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let n = rng.gen_biguint(1024);
+
+        let mut i = 0;
+        b.iter(|| {
+            n.sqrt();
+            i += 1;
+        });
+    }
+    
+    #[bench]
+    fn test_deser(b: &mut Bencher) {
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let msg: &[u8] = &rng.gen::<[u8; 32]>();
+
+        let mut i = 0;
+        b.iter(|| {
+            BigUint::from_bytes_be(msg);
             i += 1;
         });
     }
