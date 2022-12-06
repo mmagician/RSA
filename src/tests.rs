@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
+    extern crate test;
 
-    use num_bigint::BigUint;
+    use num_bigint::{BigInt, BigUint, RandBigInt, ToBigInt};
     use num_traits::{FromPrimitive, ToPrimitive};
     use rand::{rngs::StdRng, SeedableRng};
+    use test::Bencher;
 
     use crate::{algorithms::generate_private_key, PrivateKey, PublicKey};
 
@@ -158,5 +160,43 @@ mod tests {
             Token::StructEnd,
         ];
         assert_tokens(&PublicKey::from(priv_key), &priv_tokens);
+    }
+
+    #[bench]
+    fn biguint_to_bigint(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_biguint(1024))
+            .collect::<Vec<BigUint>>();
+
+        let mut i = 0;
+        b.iter(|| {
+            bigints[i % SAMPLES].to_bigint();
+            i += 1;
+        });
+    }
+
+    #[bench]
+    fn bigint_to_biguint(b: &mut Bencher) {
+        const SAMPLES: usize = 1000;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let mut rng = StdRng::seed_from_u64(seed.as_secs());
+
+        let bigints = (0..SAMPLES)
+            .map(|_| rng.gen_bigint(1024))
+            .collect::<Vec<BigInt>>();
+
+        let mut i = 0;
+        b.iter(|| {
+            bigints[i % SAMPLES].to_biguint();
+            i += 1;
+        });
     }
 }
